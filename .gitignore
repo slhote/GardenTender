@@ -34,3 +34,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Test data
+qr_codes/
