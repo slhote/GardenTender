@@ -3,14 +3,24 @@ package com.gardentender
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
+import org.koin.androidx.compose.koinViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.gardentender.auth.AuthState
+import com.gardentender.auth.AuthViewModel
 import com.gardentender.ui.GenerateScreen
 import com.gardentender.ui.HomeScreen
+import com.gardentender.ui.LoginScreen
 import com.gardentender.ui.ResultScreen
 import com.gardentender.ui.ScanScreen
 
@@ -22,9 +32,36 @@ class MainActivity : ComponentActivity() {
                 Surface {
                     val nav = rememberNavController()
                     val vm: DemoViewModel = viewModel()
-                    NavHost(nav, startDestination = "home") {
+                    val auth: AuthViewModel = koinViewModel()
+                    val authState = auth.state
+
+                    // Route to login/home as auth state changes (login, logout, restored session).
+                    LaunchedEffect(authState) {
+                        when (authState) {
+                            is AuthState.LoggedIn -> nav.navigate("home") { popUpTo(0) }
+                            AuthState.LoggedOut -> nav.navigate("login") { popUpTo(0) }
+                            AuthState.Loading -> nav.navigate("loading") { popUpTo(0) }
+                        }
+                    }
+
+                    NavHost(nav, startDestination = "loading") {
+                        composable("loading") {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                        composable("login") {
+                            LoginScreen(auth.error) { auth.login(this@MainActivity) }
+                        }
                         composable("home") {
-                            HomeScreen(vm.activityLog, { nav.navigate("scan") }, { nav.navigate("generate") })
+                            val user = (authState as? AuthState.LoggedIn)?.user
+                            HomeScreen(
+                                userLabel = user?.email ?: user?.name,
+                                log = vm.activityLog,
+                                onScan = { nav.navigate("scan") },
+                                onGenerate = { nav.navigate("generate") },
+                                onLogout = { auth.logout() },
+                            )
                         }
                         composable("generate") { GenerateScreen() }
                         composable("scan") {
