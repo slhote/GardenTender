@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,9 +36,30 @@ import com.gardentender.qr.QrScanner
 import com.gardentender.qr.ScanResult
 
 @Composable
-fun HomeScreen(log: List<String>, onScan: () -> Unit, onGenerate: () -> Unit) {
+fun LoginScreen(error: String?, onLogin: () -> Unit) {
+    Column(
+        Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("GardenTender", style = MaterialTheme.typography.headlineMedium)
+        Button(onLogin, Modifier.fillMaxWidth()) { Text("Log in") }
+        if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+fun HomeScreen(
+    userLabel: String?,
+    log: List<String>,
+    onScan: () -> Unit,
+    onGenerate: () -> Unit,
+    onLogout: () -> Unit,
+) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("GardenTender QR demo", style = MaterialTheme.typography.headlineSmall)
+        if (userLabel != null) Text("Signed in as $userLabel")
+        OutlinedButton(onLogout, Modifier.fillMaxWidth()) { Text("Log out") }
         Button(onScan, Modifier.fillMaxWidth()) { Text("Scan a code") }
         Button(onGenerate, Modifier.fillMaxWidth()) { Text("Generate a test code") }
         Text("Activity log", style = MaterialTheme.typography.titleMedium)
