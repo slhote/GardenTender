@@ -23,6 +23,7 @@ class AuthRepository(
         val result = WebAuthProvider.login(account)
             .withScheme(SCHEME)
             .withScope("openid profile email offline_access")
+            .withParameters(mapOf("prompt" to "login"))
             .await(activityContext)
         credMgr.saveCredentials(result)
         return result.user.let { UserProfile(it.name, it.email) }
@@ -37,11 +38,14 @@ class AuthRepository(
         return UserProfile(info.name, info.email)
     }
 
-    suspend fun logout(activityContext: Context) {
-        WebAuthProvider.logout(account)
-            .withScheme(SCHEME)
-            .await(activityContext)
-
+    /**
+     * Local-only logout: revokes the refresh token (best effort) and clears stored credentials.
+     * The Auth0 browser session is left alone, so [login] forces `prompt=login` to re-ask for credentials.
+     */
+    suspend fun logout() {
+        runCatching {
+            credMgr.awaitCredentials().refreshToken?.let { apiClient.revokeToken(it).await() }
+        }
         credMgr.clearCredentials()
     }
 

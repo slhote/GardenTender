@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
                                 log = vm.activityLog,
                                 onScan = { nav.navigate("scan") },
                                 onGenerate = { nav.navigate("generate") },
-                                onLogout = { auth.logout(this@MainActivity) },
+                                onLogout = { auth.logout() },
                             )
                         }
                         composable("generate") { GenerateScreen() }

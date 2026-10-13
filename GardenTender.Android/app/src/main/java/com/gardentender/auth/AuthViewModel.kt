@@ -43,10 +43,10 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
         }
     }
 
-    fun logout(activityContext: Context) {
+    fun logout() {
         viewModelScope.launch {
             try {
-                repo.logout(activityContext)
+                repo.logout()
                 state = AuthState.LoggedOut
             } catch (e: Exception) {
                 error = e.message ?: "Logout failed"
