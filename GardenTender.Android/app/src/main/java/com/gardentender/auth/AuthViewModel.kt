@@ -34,11 +34,13 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
     fun login(activityContext: Context) {
         if (!repo.isConfigured) return
         error = null
+        state = AuthState.Loading
         viewModelScope.launch {
             try {
                 state = AuthState.LoggedIn(repo.login(activityContext))
             } catch (e: Exception) {
                 error = e.message ?: "Login failed"
+                state = AuthState.LoggedOut
             }
         }
     }

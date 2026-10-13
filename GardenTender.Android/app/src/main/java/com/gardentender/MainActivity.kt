@@ -3,7 +3,12 @@ package com.gardentender
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -35,12 +40,16 @@ class MainActivity : ComponentActivity() {
                         when (authState) {
                             is AuthState.LoggedIn -> nav.navigate("home") { popUpTo(0) }
                             AuthState.LoggedOut -> nav.navigate("login") { popUpTo(0) }
-                            AuthState.Loading -> Unit
+                            AuthState.Loading -> nav.navigate("loading") { popUpTo(0) }
                         }
                     }
 
                     NavHost(nav, startDestination = "loading") {
-                        composable("loading") { }
+                        composable("loading") {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                        }
                         composable("login") {
                             LoginScreen(auth.error) { auth.login(this@MainActivity) }
                         }
