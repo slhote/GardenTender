@@ -1,7 +1,7 @@
 package com.gardentender
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -56,7 +56,7 @@ import com.gardentender.ui.ScanScreen
 import com.gardentender.ui.SettingsScreen
 import org.koin.androidx.compose.koinViewModel
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -144,7 +144,13 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             composable("login") {
-                                LoginScreen(auth.error) { auth.login(this@MainActivity) }
+                                LoginScreen(
+                                    error = auth.error,
+                                    onLogin = { auth.login(this@MainActivity) },
+                                    onBiometricLogin = if (auth.canBiometricLogin) {
+                                        { auth.loginWithBiometric(this@MainActivity) }
+                                    } else null,
+                                )
                             }
                             composable("home") {
                                 val user = (authState as? AuthState.LoggedIn)?.user
@@ -156,7 +162,14 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             composable("settings") {
-                                SettingsScreen(dark, themeVm::setDarkTheme)
+                                SettingsScreen(
+                                    darkTheme = dark,
+                                    onDarkThemeChange = themeVm::setDarkTheme,
+                                    biometricAvailable = auth.biometricAvailable,
+                                    biometricEnabled = auth.biometricEnabled,
+                                    onBiometricChange = { auth.setBiometricEnabled(this@MainActivity, it) },
+                                    error = auth.error,
+                                )
                             }
                             composable("generate") { GenerateScreen() }
                             composable("scan") {

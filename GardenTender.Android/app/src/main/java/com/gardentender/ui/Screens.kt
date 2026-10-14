@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -37,14 +38,19 @@ import com.gardentender.qr.QrScanner
 import com.gardentender.qr.ScanResult
 
 @Composable
-fun LoginScreen(error: String?, onLogin: () -> Unit) {
+fun LoginScreen(error: String?, onLogin: () -> Unit, onBiometricLogin: (() -> Unit)? = null) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("GardenTender", style = MaterialTheme.typography.headlineMedium)
-        Button(onLogin, Modifier.fillMaxWidth()) { Text("Log in") }
+        if (onBiometricLogin != null) {
+            Button(onBiometricLogin, Modifier.fillMaxWidth()) { Text("Log in with fingerprint") }
+            OutlinedButton(onLogin, Modifier.fillMaxWidth()) { Text("Log in with password") }
+        } else {
+            Button(onLogin, Modifier.fillMaxWidth()) { Text("Log in") }
+        }
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
     }
 }
@@ -68,14 +74,38 @@ fun HomeScreen(
 }
 
 @Composable
-fun SettingsScreen(darkTheme: Boolean, onDarkThemeChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(24.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text("Dark theme", style = MaterialTheme.typography.bodyLarge)
-        Switch(darkTheme, onDarkThemeChange)
+fun SettingsScreen(
+    darkTheme: Boolean,
+    onDarkThemeChange: (Boolean) -> Unit,
+    biometricAvailable: Boolean,
+    biometricEnabled: Boolean,
+    onBiometricChange: (Boolean) -> Unit,
+    error: String?,
+) {
+    Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("Dark theme", style = MaterialTheme.typography.bodyLarge)
+            Switch(darkTheme, onDarkThemeChange)
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Biometric login", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    if (biometricAvailable) "Log in with your fingerprint" else "Not available on this device",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(biometricEnabled, onBiometricChange, enabled = biometricAvailable)
+        }
+        if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
     }
 }
 
