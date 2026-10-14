@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,8 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,17 +55,27 @@ fun HomeScreen(
     log: List<String>,
     onScan: () -> Unit,
     onGenerate: () -> Unit,
-    onLogout: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("GardenTender QR demo", style = MaterialTheme.typography.headlineSmall)
         if (userLabel != null) Text("Signed in as $userLabel")
-        OutlinedButton(onLogout, Modifier.fillMaxWidth()) { Text("Log out") }
         Button(onScan, Modifier.fillMaxWidth()) { Text("Scan a code") }
         Button(onGenerate, Modifier.fillMaxWidth()) { Text("Generate a test code") }
         Text("Activity log", style = MaterialTheme.typography.titleMedium)
         if (log.isEmpty()) Text("Nothing yet. Scan a ?action=water code.")
         log.forEach { Text(it) }
+    }
+}
+
+@Composable
+fun SettingsScreen(darkTheme: Boolean, onDarkThemeChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text("Dark theme", style = MaterialTheme.typography.bodyLarge)
+        Switch(darkTheme, onDarkThemeChange)
     }
 }
 

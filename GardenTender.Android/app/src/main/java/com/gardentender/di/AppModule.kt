@@ -7,6 +7,7 @@ import com.auth0.android.authentication.storage.SharedPreferencesStorage
 import com.gardentender.BuildConfig
 import com.gardentender.auth.AuthRepository
 import com.gardentender.auth.AuthViewModel
+import com.gardentender.settings.ThemeViewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
 
@@ -16,4 +17,5 @@ val appModule = module {
     single { SecureCredentialsManager(get<AuthenticationAPIClient>(), get(), SharedPreferencesStorage(get())) }
     single { AuthRepository(get(), get(), get()) }
     viewModelOf(::AuthViewModel)
+    viewModelOf(::ThemeViewModel)
 }
