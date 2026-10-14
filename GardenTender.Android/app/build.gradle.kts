@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.auth0)
+    implementation(libs.androidx.biometric)
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
 }

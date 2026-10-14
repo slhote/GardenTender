@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -14,14 +15,27 @@ sealed interface AuthState {
     data class LoggedIn(val user: UserProfile?) : AuthState
 }
 
-class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
+class AuthViewModel(
+    private val repo: AuthRepository,
+    private val biometric: BiometricAuthenticator,
+) : ViewModel() {
     var state by mutableStateOf<AuthState>(AuthState.Loading)
         private set
     var error by mutableStateOf<String?>(null)
         private set
 
+    var biometricEnabled by mutableStateOf(repo.biometricEnabled && biometric.isAvailable())
+        private set
+    val biometricAvailable: Boolean get() = biometric.isAvailable()
+
+    /** True when the login screen should offer a fingerprint login (credentials are kept while logged out). */
+    val canBiometricLogin: Boolean get() = biometricEnabled && repo.hasValidCredentials()
+
     init {
-        if (repo.isConfigured && repo.hasValidCredentials()) {
+        if (biometricEnabled && repo.hasValidCredentials()) {
+            // Stay locked on the login screen until the user authenticates.
+            state = AuthState.LoggedOut
+        } else if (repo.isConfigured && repo.hasValidCredentials()) {
             viewModelScope.launch {
                 state = AuthState.LoggedIn(runCatching { repo.currentUser() }.getOrNull())
             }
@@ -41,6 +55,45 @@ class AuthViewModel(private val repo: AuthRepository) : ViewModel() {
             } catch (e: Exception) {
                 error = e.message ?: "Login failed"
                 state = AuthState.LoggedOut
+            }
+        }
+    }
+
+    fun loginWithBiometric(activity: FragmentActivity) {
+        if (!canBiometricLogin) return
+        error = null
+        viewModelScope.launch {
+            when (val r = biometric.authenticate(activity, "Log in to GardenTender")) {
+                BiometricResult.Success -> {
+                    state = AuthState.Loading
+                    state = try {
+                        AuthState.LoggedIn(repo.currentUser())
+                    } catch (e: Exception) {
+                        error = e.message ?: "Login failed"
+                        AuthState.LoggedOut
+                    }
+                }
+                is BiometricResult.Failed -> error = r.message
+            }
+        }
+    }
+
+    /** Turns biometric login on or off; the change only applies after a successful scan. */
+    fun setBiometricEnabled(activity: FragmentActivity, enabled: Boolean) {
+        if (enabled == biometricEnabled) return
+        if (enabled && !biometric.isAvailable()) {
+            error = "Biometric authentication is not available on this device."
+            return
+        }
+        error = null
+        viewModelScope.launch {
+            val title = if (enabled) "Enable biometric login" else "Disable biometric login"
+            when (val r = biometric.authenticate(activity, title, "Confirm with your fingerprint")) {
+                BiometricResult.Success -> {
+                    repo.biometricEnabled = enabled
+                    biometricEnabled = enabled
+                }
+                is BiometricResult.Failed -> error = r.message
             }
         }
     }

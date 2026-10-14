@@ -13,7 +13,14 @@ class AuthRepository(
     private val account: Auth0,
     private val apiClient: AuthenticationAPIClient,
     private val credMgr: SecureCredentialsManager,
+    context: Context,
 ) {
+    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    var biometricEnabled: Boolean
+        get() = prefs.getBoolean(KEY_BIOMETRIC, false)
+        set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
+
     val isConfigured: Boolean get() = BuildConfig.AUTH0_CLIENT_ID.isNotBlank()
 
     fun hasValidCredentials(): Boolean = credMgr.hasValidCredentials()
@@ -41,8 +48,10 @@ class AuthRepository(
     /**
      * Local-only logout: revokes the refresh token (best effort) and clears stored credentials.
      * The Auth0 browser session is left alone, so [login] forces `prompt=login` to re-ask for credentials.
+     * With biometric login enabled the credentials are kept so the user can log back in with a scan.
      */
     suspend fun logout() {
+        if (biometricEnabled) return
         runCatching {
             credMgr.awaitCredentials().refreshToken?.let { apiClient.revokeToken(it).await() }
         }
@@ -51,5 +60,6 @@ class AuthRepository(
 
     private companion object {
         const val SCHEME = "gardentender-auth"
+        const val KEY_BIOMETRIC = "biometric_login"
     }
 }
