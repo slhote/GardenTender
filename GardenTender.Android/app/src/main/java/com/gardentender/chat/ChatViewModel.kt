@@ -106,8 +106,11 @@ class ChatViewModel(
             deviceDone.clear()
             if (reply.reply.isNotBlank()) messages.add(ChatMessage(reply.reply, fromUser = false))
             chainResume = held.isNotEmpty() && pending.isEmpty()
-        } catch (e: ChatApiException) {
-            messages.add(ChatMessage(e.message ?: "Something went wrong.", fromUser = false))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Anything unexpected (bad JSON, etc.) should show up in the chat, not crash the app.
+            messages.add(ChatMessage((e as? ChatApiException)?.message ?: "Something went wrong talking to the chat server.", fromUser = false))
             if (held.none { it.confirm } && held.isNotEmpty()) {
                 // Nothing for the user to retry from: drop the dangling tool request so the chat can continue.
                 history = JSONArray((0 until history.length() - 1).map { history.get(it) })

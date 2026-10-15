@@ -51,7 +51,12 @@ class ChatApi(private val auth: AuthRepository) {
                 )
             if (message != null) body.put("message", message)
 
-            val conn = (URL("${BuildConfig.API_BASE_URL}/chat").openConnection() as HttpURLConnection).apply {
+            val url = try {
+                URL("${BuildConfig.API_BASE_URL}/chat")
+            } catch (e: java.net.MalformedURLException) {
+                throw ChatApiException("api.baseUrl in local.properties isn't a valid URL (it needs http:// or https://).")
+            }
+            val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 10_000
                 readTimeout = 120_000
@@ -91,7 +96,8 @@ class ChatApi(private val auth: AuthRepository) {
             } catch (e: ChatApiException) {
                 throw e
             } catch (e: java.io.IOException) {
-                throw ChatApiException("Couldn't reach the chat server.")
+                android.util.Log.w("ChatApi", "chat request failed", e)
+                throw ChatApiException("Couldn't reach the chat server (${e.javaClass.simpleName}).")
             } finally {
                 conn.disconnect()
             }
