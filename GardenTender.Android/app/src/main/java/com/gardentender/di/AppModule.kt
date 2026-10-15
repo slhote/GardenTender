@@ -8,6 +8,10 @@ import com.gardentender.BuildConfig
 import com.gardentender.auth.AuthRepository
 import com.gardentender.auth.AuthViewModel
 import com.gardentender.auth.BiometricAuthenticator
+import com.gardentender.chat.ChatApi
+import com.gardentender.chat.ChatStore
+import com.gardentender.chat.DeviceTools
+import com.gardentender.chat.ChatViewModel
 import com.gardentender.settings.ThemeViewModel
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModelOf
@@ -19,6 +23,10 @@ val appModule = module {
     single { SecureCredentialsManager(get<AuthenticationAPIClient>(), get(), SharedPreferencesStorage(get())) }
     single { BiometricAuthenticator(androidContext()) }
     single { AuthRepository(get(), get(), get(), androidContext()) }
+    single { ChatApi(get()) }
+    single { DeviceTools(androidContext()) }
+    single { ChatStore(androidContext()) }
     viewModelOf(::AuthViewModel)
+    viewModelOf(::ChatViewModel)
     viewModelOf(::ThemeViewModel)
 }
