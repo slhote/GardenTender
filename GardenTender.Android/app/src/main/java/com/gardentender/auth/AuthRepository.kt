@@ -30,11 +30,15 @@ class AuthRepository(
         val result = WebAuthProvider.login(account)
             .withScheme(SCHEME)
             .withScope("openid profile email offline_access")
+            .withAudience(BuildConfig.AUTH0_AUDIENCE)
             .withParameters(mapOf("prompt" to "login"))
             .await(activityContext)
         credMgr.saveCredentials(result)
         return result.user.let { UserProfile(it.name, it.email) }
     }
+
+    /** Access token for the GardenTender API (refreshed automatically when expired). */
+    suspend fun accessToken(): String = credMgr.awaitCredentials().accessToken
 
     suspend fun currentUser(): UserProfile {
         val creds = credMgr.awaitCredentials()

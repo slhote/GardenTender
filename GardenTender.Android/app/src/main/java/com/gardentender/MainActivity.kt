@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import android.graphics.Color
 import androidx.compose.runtime.DisposableEffect
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +49,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.gardentender.auth.AuthState
 import com.gardentender.auth.AuthViewModel
+import com.gardentender.chat.ChatFab
+import com.gardentender.chat.ChatSideSheet
+import com.gardentender.chat.ChatViewModel
 import com.gardentender.settings.ThemeViewModel
 import com.gardentender.ui.GenerateScreen
 import com.gardentender.ui.HomeScreen
@@ -76,20 +81,36 @@ class MainActivity : FragmentActivity() {
                     val nav = rememberNavController()
                     val vm: DemoViewModel = viewModel()
                     val auth: AuthViewModel = koinViewModel()
+                    val chat: ChatViewModel = koinViewModel()
                     val authState = auth.state
                     val route = nav.currentBackStackEntryAsState().value?.destination?.route
                     var menuOpen by remember { mutableStateOf(false) }
+
+                    // Reminders are shown as notifications, so ask for the permission the first time chat opens.
+                    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+                    LaunchedEffect(chat.open) {
+                        if (chat.open && android.os.Build.VERSION.SDK_INT >= 33) {
+                            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
 
                     // Route to login/home as auth state changes (login, logout, restored session).
                     LaunchedEffect(authState) {
                         when (authState) {
                             is AuthState.LoggedIn -> nav.navigate("home") { popUpTo(0) }
-                            AuthState.LoggedOut -> nav.navigate("login") { popUpTo(0) }
+                            AuthState.LoggedOut -> {
+                                chat.reset() // don't leak one user's chat to the next login
+                                nav.navigate("login") { popUpTo(0) }
+                            }
                             AuthState.Loading -> nav.navigate("loading") { popUpTo(0) }
                         }
                     }
 
+                    Box(Modifier.fillMaxSize()) {
                     Scaffold(
+                        floatingActionButton = {
+                            if (authState is AuthState.LoggedIn) ChatFab(onClick = chat::show)
+                        },
                         topBar = {
                             if (route != "loading") {
                                 // Plain Surface instead of TopAppBar: TopAppBar animates its container
@@ -182,6 +203,8 @@ class MainActivity : FragmentActivity() {
                                 ResultScreen(vm.lastResult) { nav.popBackStack("home", false) }
                             }
                         }
+                    }
+                    if (authState is AuthState.LoggedIn) ChatSideSheet(chat)
                     }
                 }
             }

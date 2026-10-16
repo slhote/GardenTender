@@ -25,6 +25,12 @@ android {
         val auth0ClientId = localProps.getProperty("auth0.clientId", "")
         buildConfigField("String", "AUTH0_DOMAIN", "\"$auth0Domain\"")
         buildConfigField("String", "AUTH0_CLIENT_ID", "\"$auth0ClientId\"")
+        // Must match the API identifier in Auth0; without it Auth0 issues an opaque token the API can't verify.
+        val auth0Audience = localProps.getProperty("auth0.audience", "https://api.gardentender")
+        // 10.0.2.2 reaches the host machine from the emulator; set api.baseUrl to your PC's LAN IP for a real phone.
+        val apiBaseUrl = localProps.getProperty("api.baseUrl", "http://10.0.2.2:8000")
+        buildConfigField("String", "AUTH0_AUDIENCE", "\"$auth0Audience\"")
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         manifestPlaceholders["auth0Domain"] = auth0Domain
         manifestPlaceholders["auth0Scheme"] = "gardentender-auth"
     }
@@ -66,8 +72,10 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.auth0)
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
 }
