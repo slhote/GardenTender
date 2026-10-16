@@ -8,8 +8,8 @@ import com.gardentender.BuildConfig
 import com.gardentender.auth.AuthRepository
 import com.gardentender.auth.AuthViewModel
 import com.gardentender.auth.BiometricAuthenticator
+import com.gardentender.chat.ActivityTracker
 import com.gardentender.chat.ChatApi
-import com.gardentender.chat.ChatStore
 import com.gardentender.chat.DeviceTools
 import com.gardentender.chat.ChatViewModel
 import com.gardentender.settings.ThemeViewModel
@@ -24,8 +24,8 @@ val appModule = module {
     single { BiometricAuthenticator(androidContext()) }
     single { AuthRepository(get(), get(), get(), androidContext()) }
     single { ChatApi(get()) }
-    single { DeviceTools(androidContext()) }
-    single { ChatStore(androidContext()) }
+    single { ActivityTracker() }
+    single { DeviceTools(androidContext(), get()) }
     viewModelOf(::AuthViewModel)
     viewModelOf(::ChatViewModel)
     viewModelOf(::ThemeViewModel)

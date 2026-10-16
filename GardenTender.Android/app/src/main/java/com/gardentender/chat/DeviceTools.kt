@@ -24,7 +24,7 @@ data class DeviceResult(val content: String, val isError: Boolean = false)
  * validated the arguments; this still handles anything the device itself can reject (past times, disabled
  * notifications, no calendar app).
  */
-class DeviceTools(private val context: Context) {
+class DeviceTools(private val context: Context, private val activities: ActivityTracker) {
     fun execute(call: PendingCall): DeviceResult = try {
         when (call.name) {
             "set_reminder" -> setReminder(call.input)
@@ -60,9 +60,15 @@ class DeviceTools(private val context: Context) {
             .putExtra(CalendarContract.Events.TITLE, input.getString("title"))
             .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, toMillis(start))
             .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, toMillis(end))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
-            context.startActivity(intent)
+            // From the visible activity the editor opens on top of this app, as a fresh screen. Only fall back to
+            // a new task when nothing is on screen.
+            val activity = activities.current
+            if (activity != null) {
+                activity.startActivity(intent)
+            } else {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
             DeviceResult("Opened the calendar app with the event prefilled. The user still has to save it there.")
         } catch (e: ActivityNotFoundException) {
             DeviceResult("No calendar app is installed.", isError = true)

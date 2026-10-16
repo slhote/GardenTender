@@ -20,7 +20,8 @@ data class PendingCall(
 
 data class ChatReply(val history: JSONArray, val reply: String, val pending: List<PendingCall>)
 
-class ChatApiException(message: String) : Exception(message)
+/** [isNetwork] marks connection-level failures, which are worth retrying if the app was backgrounded. */
+class ChatApiException(message: String, val isNetwork: Boolean = false) : Exception(message)
 
 /**
  * Talks to GardenTender.Api `/chat`. [history] is opaque: it is echoed back from the previous response so the
@@ -97,7 +98,7 @@ class ChatApi(private val auth: AuthRepository) {
                 throw e
             } catch (e: java.io.IOException) {
                 android.util.Log.w("ChatApi", "chat request failed", e)
-                throw ChatApiException("Couldn't reach the chat server (${e.javaClass.simpleName}).")
+                throw ChatApiException("Couldn't reach the chat server (${e.javaClass.simpleName}).", isNetwork = true)
             } finally {
                 conn.disconnect()
             }

@@ -7,7 +7,7 @@ Python (FastAPI) backend that fronts an LLM for the in-app chat. The LLM can cal
 Get a basic, secure chat loop working with one LLM first; expand afterwards.
 
 - **In:** FastAPI, Auth0 JWT verification and permission checks, `/chat` with a plain provider-agnostic loop (Claude first, iteration cap), a tool registry with `list_plants` and `update_plant` (`confirm`), the same `services/` behind direct endpoints, and the app's `ChatViewModel.reply()` calling `/chat`.
-- **Also built (originally deferred):** device tools (`set_reminder` via WorkManager notifications, `add_calendar_event` via the calendar app's insert intent, `confirm` on the latter) and chat persistence (a small JSON file in app-private storage instead of Room, cleared on logout).
+- **Also built (originally deferred):** device tools (`set_reminder` via WorkManager notifications, `add_calendar_event` via the calendar app's insert intent, `confirm` on the latter) and in-memory chat that survives closing the sheet and navigation but is cleared when the app is closed (no on-disk persistence by design). Declining an approval is handled on the device without a network call.
 - **Still deferred:** streaming and Ollama (both wait for LangChain), LLM-specific permissions, LangChain/LangGraph.
 - **LangChain/LangGraph later:** `/chat` depends only on `run_chat(user, history, decisions)` in `app/llm/loop.py`. A LangGraph agent can replace the inside of that function without touching auth, endpoints, the tool registry (converted to LangChain tools in one place) or `services/`. Consider it when workflows become multi-step or confirmations need durable pause/resume.
 - **Stateless confirmation:** `/chat` returns the updated history plus any pending calls; the client sends the history back with `decisions`. A client can forge history, but execution still enforces the same permissions and validation as the direct endpoints, so it gains no extra capability.
@@ -169,5 +169,5 @@ Status: steps 1-6 are built; step 7 and streaming wait for LangChain. The Auth0 
 3. Tool registry, `LlmProvider` interface, Claude provider and the tool-use loop (server tools first).
 4. App: request audience at login, replace `ChatViewModel.reply()` with an API call.
 5. Device tools and the on-device confirmation UI (reminders, then calendar).
-6. Persisting chat history: done (JSON file, not Room). Streaming (SSE) waits for LangChain; the MVP returns the full reply in one response.
+6. Chat history is memory-only by design (cleared when the app closes), so no persistence layer is planned. Streaming (SSE) waits for LangChain; the MVP returns the full reply in one response.
 7. Ollama: a small temporary hand-written adapter (`app/llm/ollama.py`, non-streaming, generates tool-call ids) was added at the user's request ahead of LangChain. Replace it with `ChatOllama` behind the same seam when LangChain is adopted.

@@ -4,7 +4,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.withStarted
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -13,12 +17,11 @@ data class ChatMessage(val text: String, val fromUser: Boolean)
 
 /**
  * Holds the conversation. Scoped to the activity so it survives closing the sheet,
- * navigating between screens, and configuration changes; [ChatStore] carries it across restarts.
+ * navigating between screens, and configuration changes. It is memory-only on purpose: closing the app clears it.
  */
 class ChatViewModel(
     private val api: ChatApi,
     private val device: DeviceTools,
-    private val store: ChatStore,
 ) : ViewModel() {
     val messages = mutableStateListOf<ChatMessage>()
     var open by mutableStateOf(false)
@@ -39,14 +42,14 @@ class ChatViewModel(
     // Device calls already executed for the current pause, so a failed resume is never run twice.
     private val deviceDone = mutableMapOf<String, DeviceResult>()
 
+    // Set when the whole app leaves the foreground (e.g. the calendar app opens) while a request is running.
+    private var backgrounded = false
+    private val processObserver = object : DefaultLifecycleObserver {
+        override fun onStop(owner: LifecycleOwner) { backgrounded = true }
+    }
+
     init {
-        store.load()?.let {
-            messages.addAll(it.messages)
-            history = it.history
-            held = it.held
-            pending = held.filter { c -> c.confirm }
-            if (held.isNotEmpty() && pending.isEmpty()) resume(approved = true)
-        }
+        ProcessLifecycleOwner.get().lifecycle.addObserver(processObserver)
     }
 
     fun show() { open = true }
@@ -60,7 +63,6 @@ class ChatViewModel(
         deviceDone.clear()
         history = JSONArray()
         sending = false
-        store.clear()
     }
 
     fun send(text: String) {
@@ -71,13 +73,32 @@ class ChatViewModel(
         viewModelScope.launch { call(trimmed, emptyMap(), emptyMap()) }
     }
 
-    /** Approves or declines every call that asked for approval; runs the device calls that don't need it. */
-    fun decide(approved: Boolean) = resume(approved)
+    /** Approving runs the calls and tells the server. Declining is handled locally so it works offline. */
+    fun decide(approved: Boolean) {
+        if (approved) resume(approved = true) else declineLocally()
+    }
+
+    /**
+     * Drops the paused tool request and keeps the chat usable. The assistant turn that asked for the action is
+     * removed from the server history, so no network request is needed and the card can never get stuck.
+     */
+    private fun declineLocally() {
+        if (sending || held.isEmpty()) return
+        val last = history.length() - 1
+        if (last >= 0 && history.getJSONObject(last).optString("role") == "assistant") {
+            history = JSONArray((0 until last).map { history.get(it) })
+        }
+        held = emptyList()
+        pending = emptyList()
+        deviceDone.clear()
+        messages.add(ChatMessage("Okay, I won't do that.", fromUser = false))
+    }
 
     private fun resume(approved: Boolean) {
         if (sending || held.isEmpty()) return
         sending = true
         val calls = held
+        pending = emptyList() // hide the card right away; it comes back only if the request fails
         viewModelScope.launch {
             val decisions = mutableMapOf<String, Boolean>()
             val results = mutableMapOf<String, DeviceResult>()
@@ -99,7 +120,17 @@ class ChatViewModel(
     private suspend fun call(message: String?, decisions: Map<String, Boolean>, deviceResults: Map<String, DeviceResult>) {
         var chainResume = false
         try {
-            val reply = api.chat(history, message, decisions, deviceResults)
+            backgrounded = false
+            val reply = try {
+                api.chat(history, message, decisions, deviceResults)
+            } catch (e: ChatApiException) {
+                // Android can cut the connection while the app is in the background. If that's what happened,
+                // wait for the user to come back and try once more (device results are cached, so nothing re-runs).
+                if (!e.isNetwork || !backgrounded) throw e
+                ProcessLifecycleOwner.get().lifecycle.withStarted { }
+                backgrounded = false
+                api.chat(history, message, decisions, deviceResults)
+            }
             history = reply.history
             held = reply.pending
             pending = held.filter { it.confirm }
@@ -120,8 +151,11 @@ class ChatViewModel(
             pending = held.filter { it.confirm }
         } finally {
             sending = false
-            store.save(messages, history, held)
         }
         if (chainResume) resume(approved = true)
+    }
+
+    override fun onCleared() {
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(processObserver)
     }
 }

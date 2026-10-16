@@ -144,8 +144,7 @@ private fun ConfirmCard(vm: ChatViewModel) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Allow this action?", style = MaterialTheme.typography.titleSmall)
             vm.pending.forEach { call ->
-                val args = call.input.keys().asSequence().joinToString(", ") { "$it=${call.input.get(it)}" }
-                Text("${call.name}($args)", style = MaterialTheme.typography.bodyMedium)
+                Text(describeCall(call), style = MaterialTheme.typography.bodyMedium)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.decide(true) }, enabled = !vm.sending) { Text("Approve") }
