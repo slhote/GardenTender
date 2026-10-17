@@ -25,7 +25,7 @@ Install the debug build on the connected phone.
 2. Build and install. The first build after a dependency change can take several minutes, so run it in the background and wait for the completion notification instead of polling:
 
    ```powershell
-   cd C:\Users\Seth\Source\Repos\GardenTender\GardenTender.Android; .\gradlew.bat :app:installDebug
+   cd C:\Users\Seth\Source\Repos\GardenTender\GardenTender.Android; ./gradlew :app:clean :app:installDebug
    ```
 
 3. Report the result in one or two lines: "Installed on 1 device." on success, or the Gradle error on failure.

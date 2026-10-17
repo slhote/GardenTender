@@ -17,9 +17,12 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // Read through providers so Gradle tracks the file; otherwise the configuration cache keeps stale values.
         val localProps = Properties().apply {
-            val f = rootProject.file("local.properties")
-            if (f.exists()) f.inputStream().use { load(it) }
+            val file = rootProject.layout.projectDirectory.file("local.properties")
+            val text = providers.fileContents(file)
+                                .asText
+            if (text.isPresent) load(text.get().reader())
         }
         val auth0Domain = localProps.getProperty("auth0.domain", "example.auth0.com")
         val auth0ClientId = localProps.getProperty("auth0.clientId", "")
