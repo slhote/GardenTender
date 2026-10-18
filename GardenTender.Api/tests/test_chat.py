@@ -198,3 +198,17 @@ def test_missing_anthropic_key_is_a_502_not_a_500(client, monkeypatch):
     monkeypatch.setattr("app.main.get_settings", lambda: Settings(llm_provider="claude", anthropic_api_key=""))
     r = client.post("/chat", json={"message": "hi"})
     assert r.status_code == 502
+
+
+def test_model_selection_for_ollama(client, monkeypatch):
+    from app.config import Settings
+    from app.main import app as _app
+
+    login()
+    monkeypatch.setattr("app.main.get_settings", lambda: Settings(llm_provider="ollama", llm_model="qwen2.5:3b"))
+    assert client.get("/models").json() == {"models": ["gemma4", "qwen3.5:4b", "qwen2.5:3b"], "default": "qwen2.5:3b"}
+    assert client.post("/chat", json={"message": "hi", "model": "not-a-model"}).status_code == 400
+
+    from app.main import get_provider, ChatRequest
+    assert get_provider(ChatRequest(model="gemma4"))._model == "gemma4"
+    assert get_provider(ChatRequest())._model == "qwen2.5:3b"
