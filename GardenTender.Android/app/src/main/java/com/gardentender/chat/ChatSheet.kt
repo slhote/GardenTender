@@ -28,9 +28,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -127,12 +131,33 @@ private fun ChatContent(vm: ChatViewModel) {
                 modifier = Modifier.weight(1f),
                 enabled = vm.pending.isEmpty(),
                 placeholder = { Text("Message") },
+                leadingIcon = { ModelMenu(vm) },
                 maxLines = 4,
             )
             IconButton(
                 onClick = { vm.send(input); input = "" },
                 enabled = input.isNotBlank() && !vm.sending && vm.pending.isEmpty(),
             ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send") }
+        }
+    }
+}
+
+/** Menu button inside the input field for choosing which LLM the API uses. */
+@Composable
+private fun ModelMenu(vm: ChatViewModel) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, enabled = !vm.sending) {
+            Icon(Icons.Filled.Tune, contentDescription = "Model: ${vm.model}")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            CHAT_MODELS.forEach { name ->
+                DropdownMenuItem(
+                    text = { Text(name) },
+                    leadingIcon = { if (name == vm.model) Icon(Icons.Filled.Check, contentDescription = "Selected") },
+                    onClick = { vm.selectModel(name); expanded = false },
+                )
+            }
         }
     }
 }

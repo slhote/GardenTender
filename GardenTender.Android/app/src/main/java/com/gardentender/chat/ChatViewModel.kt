@@ -15,6 +15,9 @@ import org.json.JSONArray
 
 data class ChatMessage(val text: String, val fromUser: Boolean)
 
+/** Models the API can switch between; names must match the server's `ollama_models`. */
+val CHAT_MODELS = listOf("gemma4", "qwen3.5:4b", "qwen2.5:3b")
+
 /**
  * Holds the conversation. Scoped to the activity so it survives closing the sheet,
  * navigating between screens, and configuration changes. It is memory-only on purpose: closing the app clears it.
@@ -27,6 +30,8 @@ class ChatViewModel(
     var open by mutableStateOf(false)
         private set
     var sending by mutableStateOf(false)
+        private set
+    var model by mutableStateOf(CHAT_MODELS.last())
         private set
 
     /** Calls waiting for the user's approval (the card shown in the sheet). */
@@ -51,6 +56,8 @@ class ChatViewModel(
     init {
         ProcessLifecycleOwner.get().lifecycle.addObserver(processObserver)
     }
+
+    fun selectModel(name: String) { if (name in CHAT_MODELS) model = name }
 
     fun show() { open = true }
     fun hide() { open = false }
@@ -122,14 +129,14 @@ class ChatViewModel(
         try {
             backgrounded = false
             val reply = try {
-                api.chat(history, message, decisions, deviceResults)
+                api.chat(history, message, decisions, deviceResults, model)
             } catch (e: ChatApiException) {
                 // Android can cut the connection while the app is in the background. If that's what happened,
                 // wait for the user to come back and try once more (device results are cached, so nothing re-runs).
                 if (!e.isNetwork || !backgrounded) throw e
                 ProcessLifecycleOwner.get().lifecycle.withStarted { }
                 backgrounded = false
-                api.chat(history, message, decisions, deviceResults)
+                api.chat(history, message, decisions, deviceResults, model)
             }
             history = reply.history
             held = reply.pending

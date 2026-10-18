@@ -33,6 +33,7 @@ class ChatApi(private val auth: AuthRepository) {
         message: String?,
         decisions: Map<String, Boolean>,
         deviceResults: Map<String, DeviceResult>,
+        model: String? = null,
     ): ChatReply =
         withContext(Dispatchers.IO) {
             val token = try {
@@ -51,6 +52,7 @@ class ChatApi(private val auth: AuthRepository) {
                     },
                 )
             if (message != null) body.put("message", message)
+            if (model != null) body.put("model", model)
 
             val url = try {
                 URL("${BuildConfig.API_BASE_URL}/chat")
@@ -71,6 +73,7 @@ class ChatApi(private val auth: AuthRepository) {
                 if (code !in 200..299) {
                     throw ChatApiException(
                         when (code) {
+                            400 -> "The server doesn't offer that model. Pick another one."
                             401 -> "Not authorized. Try logging out and back in."
                             403 -> "Your account doesn't have chat access."
                             else -> "Chat server error ($code)."

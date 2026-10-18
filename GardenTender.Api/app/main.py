@@ -30,15 +30,6 @@ async def llm_unavailable(_, exc: LlmUnavailable):
     return JSONResponse({"detail": "The chat model is unavailable."}, status_code=502)
 
 
-def get_provider() -> LlmProvider:
-    s = get_settings()
-    if s.llm_provider == "claude":
-        return ClaudeProvider(s.anthropic_api_key, s.llm_model)
-    if s.llm_provider == "ollama":
-        return OllamaProvider(s.ollama_base_url, s.llm_model)
-    raise HTTPException(500, f"Unknown LLM provider {s.llm_provider!r}")
-
-
 class DeviceResultIn(BaseModel):
     content: str
     is_error: bool = False
@@ -51,6 +42,28 @@ class ChatRequest(BaseModel):
     decisions: dict[str, bool] = {}
     device_results: dict[str, DeviceResultIn] = {}
     timezone: str | None = None  # IANA name, e.g. America/Chicago
+    model: str | None = None  # one of GET /models; only honored for the ollama provider
+
+
+@app.get("/models")
+async def list_models(_: User = Depends(require_permission("chat:use"))):
+    s = get_settings()
+    if s.llm_provider == "ollama":
+        models = s.ollama_models if s.llm_model in s.ollama_models else [s.llm_model, *s.ollama_models]
+        return {"models": models, "default": s.llm_model}
+    return {"models": [s.llm_model], "default": s.llm_model}
+
+
+def get_provider(req: ChatRequest) -> LlmProvider:
+    s = get_settings()
+    if s.llm_provider == "claude":
+        return ClaudeProvider(s.anthropic_api_key, s.llm_model)
+    if s.llm_provider == "ollama":
+        model = req.model or s.llm_model
+        if model != s.llm_model and model not in s.ollama_models:
+            raise HTTPException(400, f"Unknown model {model!r}.")
+        return OllamaProvider(s.ollama_base_url, model)
+    raise HTTPException(500, f"Unknown LLM provider {s.llm_provider!r}")
 
 
 class PendingOut(BaseModel):
