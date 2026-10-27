@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.access import Actor
 from app.roles import GardenPermission, GardenRole, role_allows
-from app.services import plants
+from app.services import plants, requests
 
 
 @dataclass(frozen=True)
@@ -88,8 +88,14 @@ async def _update_plant(session: AsyncSession, ctx: ToolContext, args: UpdatePla
     return (await plants.update_plant(session, ctx.garden_id, ctx.actor, args.plant_id, args.field, args.value)).model_dump()
 
 
-async def _add_plant(session: AsyncSession, ctx: ToolContext, args: plants.NewPlant):
-    return (await plants.create_plant(session, ctx.garden_id, ctx.actor, args)).model_dump()
+class AddPlantInput(plants.NewPlant):
+    note: str | None = None  # why, for the admin reviewing a contributor's request
+
+
+async def _add_plant(session: AsyncSession, ctx: ToolContext, args: AddPlantInput):
+    payload = args.model_dump(exclude={"note"})
+    request = await requests.submit(session, ctx.garden_id, ctx.actor, ctx.role, "create_plant", payload, args.note)
+    return request.model_dump(mode="json", include={"id", "status", "result"})
 
 
 TOOLS: dict[str, Tool] = {
@@ -104,10 +110,13 @@ TOOLS: dict[str, Tool] = {
         ),
         Tool(
             name="add_plant",
-            description="Add a plant to this garden.",
-            input_model=plants.NewPlant,
+            description=(
+                "Add a plant to this garden. Admins add it immediately (status approved). For contributors this "
+                "files a request an admin must approve (status pending); tell the user it is awaiting approval."
+            ),
+            input_model=AddPlantInput,
             handler=_add_plant,
-            permission=GardenPermission.PLANTS_CREATE,
+            permission=GardenPermission.FILE_REQUESTS,
             confirm=True,
         ),
         Tool(
