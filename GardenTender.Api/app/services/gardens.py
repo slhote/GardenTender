@@ -40,7 +40,8 @@ class MemberOut(BaseModel):
     display_name: str
     role: GardenRole
     joined_at: datetime
-    invited_by: str | None = None  # handle of the inviter: "joined via invite from X"
+    invited_by: str | None = None  # handle: "invited by X"
+    approved_by: str | None = None  # handle, when a contributor's invite was approved: "...; approved by Y"
 
 
 def _out(garden: GardenRow, role: GardenRole | str | None = None) -> GardenOut:
@@ -131,17 +132,20 @@ async def purge_deleted(session: AsyncSession, retention_days: int, now: datetim
 
 
 async def list_members(session: AsyncSession, garden_id: int) -> list[MemberOut]:
-    inviter = aliased(UserRow)
+    inviter, approver = aliased(UserRow), aliased(UserRow)
     rows = await session.execute(
-        select(GardenMemberRow, UserRow, inviter.handle)
+        select(GardenMemberRow, UserRow, inviter.handle, approver.handle)
         .join(UserRow, UserRow.sub == GardenMemberRow.user_sub)
         .outerjoin(inviter, inviter.sub == GardenMemberRow.invited_by)
+        .outerjoin(approver, approver.sub == GardenMemberRow.approved_by)
         .where(GardenMemberRow.garden_id == garden_id)
         .order_by(UserRow.handle)
     )
     return [
-        MemberOut(handle=u.handle, display_name=u.display_name, role=m.role, joined_at=m.joined_at, invited_by=inv)
-        for m, u, inv in rows
+        MemberOut(
+            handle=u.handle, display_name=u.display_name, role=m.role, joined_at=m.joined_at, invited_by=inv, approved_by=appr
+        )
+        for m, u, inv, appr in rows
     ]
 
 

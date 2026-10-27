@@ -47,7 +47,7 @@ def test_admin_invites_by_email_and_link_joins(client):
     assert client.post("/invites/accept", json={"token": token_from(message)}).json() == {"garden_id": gid}
     login(sub="auth0|ann")
     zed = members(client, gid)["zed"]
-    assert (zed["role"], zed["invited_by"]) == ("contributor", "ann")
+    assert (zed["role"], zed["invited_by"], zed["approved_by"]) == ("contributor", "ann", None)
 
 
 def test_link_is_single_use(client):
@@ -187,12 +187,15 @@ def test_contributor_invite_goes_through_approval(client):
     approved = client.post(f"/gardens/{gid}/requests/{req['id']}/approve", json={}).json()
     assert approved["status"] == "approved" and "invite_id" in approved["result"]
     [message] = sent
-    assert "as admin" in message.body and message.body.count("@ann") == 1  # the approver sends it
+    assert "@bob (approved by @ann) invited you" in message.body and "as admin" in message.body
+    [pending] = client.get(f"/gardens/{gid}/invites").json()
+    assert (pending["invited_by"], pending["approved_by"]) == ("bob", "ann")
 
     onboard(client, "auth0|cat")
     client.post("/invites/accept", json={"token": token_from(message)})
     login(sub="auth0|ann")
-    assert members(client, gid)["cat"]["role"] == "admin"
+    cat = members(client, gid)["cat"]
+    assert (cat["role"], cat["invited_by"], cat["approved_by"]) == ("admin", "bob", "ann")
 
 
 def test_qr_invite_is_admin_only_short_lived_single_use(client):

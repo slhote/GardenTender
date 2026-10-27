@@ -22,6 +22,7 @@ def upgrade() -> None:
     sa.Column('via', sa.String(), nullable=False),
     sa.Column('role', sa.String(), nullable=False),
     sa.Column('invited_by', sa.String(), nullable=True),
+    sa.Column('approved_by', sa.String(), nullable=True),
     sa.Column('invitee_sub', sa.String(), nullable=True),
     sa.Column('email', sa.String(), nullable=True),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
@@ -33,15 +34,22 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['accepted_by'], ['users.sub'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['garden_id'], ['gardens.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['invited_by'], ['users.sub'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['approved_by'], ['users.sub'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['invitee_sub'], ['users.sub'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('token_hash')
     )
     op.create_index(op.f('ix_invites_garden_id'), 'invites', ['garden_id'], unique=False)
     op.create_index(op.f('ix_invites_invitee_sub'), 'invites', ['invitee_sub'], unique=False)
+    with op.batch_alter_table('garden_members') as batch:
+        batch.add_column(sa.Column('approved_by', sa.String(), nullable=True))
+        batch.create_foreign_key('fk_garden_members_approved_by', 'users', ['approved_by'], ['sub'], ondelete='SET NULL')
 
 
 def downgrade() -> None:
+    with op.batch_alter_table('garden_members') as batch:
+        batch.drop_constraint('fk_garden_members_approved_by', type_='foreignkey')
+        batch.drop_column('approved_by')
     op.drop_index(op.f('ix_invites_invitee_sub'), table_name='invites')
     op.drop_index(op.f('ix_invites_garden_id'), table_name='invites')
     op.drop_table('invites')

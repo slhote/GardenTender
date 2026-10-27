@@ -50,6 +50,7 @@ class GardenMemberRow(Base):
     user_sub: Mapped[str] = mapped_column(ForeignKey("users.sub", ondelete="CASCADE"), primary_key=True, index=True)
     role: Mapped[str] = mapped_column(String)  # app.roles.GardenRole
     invited_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))  # admin who approved a contributor's invite
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -113,6 +114,7 @@ class InviteRow(Base):
     via: Mapped[str] = mapped_column(String)  # app.services.invites.InviteVia
     role: Mapped[str] = mapped_column(String)
     invited_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))  # set for approved requests
     invitee_sub: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="CASCADE"), index=True)
     email: Mapped[str | None] = mapped_column(String)  # the address the inviter typed, if any
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

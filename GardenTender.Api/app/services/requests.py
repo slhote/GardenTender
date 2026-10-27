@@ -43,7 +43,8 @@ class RequestDeps:
 class ApplyContext:
     session: AsyncSession
     garden: GardenRow
-    actor: Actor
+    actor: Actor  # who approved (the requester themselves when auto-approved)
+    requested_by: str
     deps: RequestDeps
 
 
@@ -71,7 +72,9 @@ async def _apply_create_plant(ctx: ApplyContext, payload: dict) -> dict:
 
 async def _apply_invite(ctx: ApplyContext, payload: dict) -> dict:
     target = invites.InviteTarget.model_validate(payload)
-    invite = await invites.create(ctx.session, ctx.garden, ctx.actor, target, ctx.deps.notifier, ctx.deps.invite_ttl)
+    invite = await invites.create(
+        ctx.session, ctx.garden, ctx.actor, target, ctx.deps.notifier, ctx.deps.invite_ttl, requested_by=ctx.requested_by
+    )
     return {"invite_id": invite.id}
 
 
@@ -223,7 +226,7 @@ async def _approve(
     session: AsyncSession, row: GardenRequestRow, kind: RequestKind, actor: Actor, reason: str | None, deps: RequestDeps
 ) -> None:
     garden = await session.get(GardenRow, row.garden_id)
-    row.result = await kind.apply(ApplyContext(session, garden, actor, deps), row.payload)
+    row.result = await kind.apply(ApplyContext(session, garden, actor, row.requested_by, deps), row.payload)
     _decide(row, RequestStatus.APPROVED, actor, reason)
     events.record(session, row.garden_id, actor, "request.approved", request_id=row.id, reason=reason, result=row.result)
 
