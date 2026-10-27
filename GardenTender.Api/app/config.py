@@ -8,6 +8,8 @@ class Settings(BaseSettings):
 
     auth0_domain: str = ""
     auth0_audience: str = ""
+    # Prefix of custom claims added by the Auth0 Action, e.g. "https://gardentender/" -> "https://gardentender/email".
+    auth0_claims_namespace: str = ""
     anthropic_api_key: str = ""
     llm_provider: str = "claude"  # claude | ollama
     ollama_base_url: str = "http://localhost:11434"

@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors import InvalidInput, NotFound
 from app.models import PlantRow
 
 
@@ -17,10 +18,6 @@ class Plant(BaseModel):
     species: str = ""
     notes: str = ""
     water_every_days: int = 7
-
-
-class PlantError(Exception):
-    pass
 
 
 EDITABLE_FIELDS = ("name", "species", "notes", "water_every_days")
@@ -41,17 +38,17 @@ async def list_plants(session: AsyncSession, user_id: str) -> list[Plant]:
 
 async def update_plant(session: AsyncSession, user_id: str, plant_id: int, field: str, value: str) -> Plant:
     if field not in EDITABLE_FIELDS:
-        raise PlantError(f"Field must be one of {EDITABLE_FIELDS}")
+        raise InvalidInput(f"Field must be one of {EDITABLE_FIELDS}")
     row = await session.scalar(select(PlantRow).where(PlantRow.id == plant_id, PlantRow.user_id == user_id))
     if row is None:
-        raise PlantError(f"No plant with id {plant_id!r}")
+        raise NotFound(f"No plant with id {plant_id!r}")
     if field == "water_every_days":
         try:
             days = int(value)
         except ValueError:
-            raise PlantError("water_every_days must be an integer")
+            raise InvalidInput("water_every_days must be an integer")
         if not 1 <= days <= 365:
-            raise PlantError("water_every_days must be between 1 and 365")
+            raise InvalidInput("water_every_days must be between 1 and 365")
         row.water_every_days = days
     else:
         setattr(row, field, value)

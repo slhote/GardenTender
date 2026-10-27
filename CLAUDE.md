@@ -13,12 +13,13 @@ cp .env.example .env                    # then fill in Auth0 / Anthropic / Postg
 docker compose up --build               # Postgres + API at http://localhost:8000/docs
 docker compose up db                    # Postgres only, when running the API locally
 uv sync
+uv run alembic upgrade head            # schema (Docker does this on start)
 uv run uvicorn app.main:app --reload
 uv run pytest                           # no network, API key or Docker needed (throwaway SQLite)
 uv run pytest tests/test_chat.py::test_name   # single test
 ```
 
-Tables are created on startup; there are no migrations yet (add Alembic before changing the schema).
+Schema changes go through Alembic (`migrations/`): edit `app/models.py`, then `uv run alembic revision --autogenerate -m "..."`. `tests/test_migrations.py` checks migrations match the models.
 
 ### Android (`GardenTender.Android`)
 
@@ -40,6 +41,15 @@ Tables are created on startup; there are no migrations yet (add Alembic before c
 
 **Auth.** Auth0 RS256 JWTs verified in `app/auth.py`; permissions (`chat:use`, `reminders:write`, `calendar:write`, `plants:write`) come from the RBAC `permissions` claim. The model only sees tools the user has permission for. The app must request the API audience at login or Auth0 issues an opaque token the API can't verify.
 
+**API layout.** `app/main.py` only builds the app: it registers exception handlers and includes the per-feature routers in `app/routers/`. Routers stay thin: they declare dependencies and call `app/services/`, which hold the logic and raise domain errors from `app/errors.py` (never `HTTPException`). `app/exception_handlers.py` is the single place those become HTTP responses. Config, sessions and the current user come in through `Depends(...)`, so tests swap them with `app.dependency_overrides`. Shared test fixtures live in `tests/conftest.py`, helpers in `tests/support.py`.
+
 **Convention (see `GardenTender.Api/PLAN.md`).** Don't hand-build features LangChain/LangGraph will later own (streaming, retries, token counting, memory, cross-provider normalization). Keep the seams (`run_chat`, `LlmProvider`, tool registry, `services/`) free of framework dependencies.
 
 **Android.** Single-module Compose app with Hilt-style DI in `di/AppModule.kt`, Auth0 + biometric login in `auth/`, QR scan/generate in `qr/`, and screens in `ui/Screens.kt`.
+
+## Engineering standards (whole repo: API and Android)
+
+- Single responsibility: one feature per router/screen/ViewModel file; no god files (e.g. routes don't accumulate in `main.py`, screens don't accumulate in one file).
+- Dependency injection: inject collaborators (FastAPI `Depends`, Hilt-style modules on Android) instead of reaching for globals, so they can be swapped in tests.
+- SOLID and DRY: depend on interfaces at the seams (`LlmProvider`, services); extract shared code instead of copying it, including in tests.
+- Error handling: raise or return typed domain errors from the logic layer and map them to transport/UI errors in one place; never swallow exceptions silently.
