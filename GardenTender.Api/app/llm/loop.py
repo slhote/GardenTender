@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth import User
 from app.llm.base import LlmProvider
-from app.services.plants import PlantError
+from app.errors import DomainError
 from app.tools.registry import TOOLS, tools_for
 
 
@@ -68,7 +68,7 @@ async def _execute(maker: async_sessionmaker[AsyncSession], user: User, name: st
         # Short-lived session per tool call: no connection is held while waiting on the LLM.
         async with maker() as session:
             return json.dumps(await tool.handler(session, user.sub, args)), False
-    except PlantError as e:
+    except DomainError as e:
         return str(e), True
 
 

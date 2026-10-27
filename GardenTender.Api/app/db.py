@@ -37,9 +37,3 @@ async def get_session(maker: async_sessionmaker[AsyncSession] = Depends(get_sess
 async def dispose_engine() -> None:
     await get_engine().dispose()
 
-
-async def create_tables() -> None:
-    from app import models  # noqa: F401  (registers tables on Base.metadata)
-
-    async with get_engine().begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
