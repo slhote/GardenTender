@@ -3,7 +3,7 @@
 Stateless resume: when the model requests a call that needs the client (a `confirm=True` server tool, or any
 `runs_on="device"` tool), the loop stops and returns the history plus the pending calls. The client sends the
 history back with `decisions` (server tools) and `device_results` (device tools) to resume. Forged history
-gains no extra capability: every executed call is still permission-checked and validated here.
+gains no extra capability: every executed call is still checked against the caller's garden role and validated here.
 """
 import json
 from dataclasses import dataclass, field
@@ -13,10 +13,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.auth import User
 from app.llm.base import LlmProvider
 from app.errors import DomainError
-from app.tools.registry import TOOLS, tools_for
+from app.tools.registry import TOOLS, ToolContext, tools_for
 
 
 @dataclass
@@ -48,17 +47,17 @@ def _system_prompt(tz_name: str | None) -> str:
         tz = timezone.utc
     now = datetime.now(tz).isoformat(timespec="minutes")
     return (
-        "You are the GardenTender assistant, helping the user care for their plants. "
+        "You are the GardenTender assistant, helping the user care for the plants in their garden. "
         f"The user's current local time is {now} ({tz_name or 'UTC'}). Use the provided tools to read or "
         "change the user's data; never guess ids. Times you pass to tools are local ISO 8601 "
         "(e.g. 2026-10-15T09:00). Be brief."
     )
 
 
-async def _execute(maker: async_sessionmaker[AsyncSession], user: User, name: str, raw_input: dict) -> tuple[str, bool]:
+async def _execute(maker: async_sessionmaker[AsyncSession], ctx: ToolContext, name: str, raw_input: dict) -> tuple[str, bool]:
     """Runs one tool call as the user. Returns (content, is_error)."""
     tool = TOOLS.get(name)
-    if tool is None or tool.permission not in user.permissions:
+    if tool is None or not ctx.allows(tool.permission):
         return f"Tool {name!r} is not available.", True
     try:
         args = tool.input_model.model_validate(raw_input)
@@ -67,7 +66,7 @@ async def _execute(maker: async_sessionmaker[AsyncSession], user: User, name: st
     try:
         # Short-lived session per tool call: no connection is held while waiting on the LLM.
         async with maker() as session:
-            return json.dumps(await tool.handler(session, user.sub, args)), False
+            return json.dumps(await tool.handler(session, ctx, args)), False
     except DomainError as e:
         return str(e), True
 
@@ -88,10 +87,10 @@ def _validated(tool, raw_input: dict):
         return None, f"Invalid arguments: {e.errors(include_url=False, include_context=False)}"
 
 
-def _needs_client(user: User, call: dict) -> bool:
+def _needs_client(ctx: ToolContext, call: dict) -> bool:
     """True if the call can't be answered by the server alone."""
     tool = TOOLS.get(call["name"])
-    if tool is None or tool.permission not in user.permissions:
+    if tool is None or not ctx.allows(tool.permission):
         return False  # answered with an error in _resolve
     if tool.runs_on == "device":
         return _validated(tool, call["input"])[1] is None  # invalid args are bounced back to the model
@@ -100,7 +99,7 @@ def _needs_client(user: User, call: dict) -> bool:
 
 async def _resolve(
     maker: async_sessionmaker[AsyncSession],
-    user: User,
+    ctx: ToolContext,
     calls: list[dict],
     decisions: dict[str, bool],
     device_results: dict[str, DeviceResult],
@@ -109,7 +108,7 @@ async def _resolve(
     results = []
     for call in calls:
         tool = TOOLS.get(call["name"])
-        if tool is not None and tool.permission in user.permissions and tool.runs_on == "device":
+        if tool is not None and ctx.allows(tool.permission) and tool.runs_on == "device":
             _, error = _validated(tool, call["input"])
             if error:
                 results.append(_result_block(call["id"], error, True))
@@ -119,14 +118,14 @@ async def _resolve(
         elif tool is not None and tool.confirm and not decisions.get(call["id"], False):
             results.append(_result_block(call["id"], "The user declined this action.", True))
         else:
-            content, is_error = await _execute(maker, user, call["name"], call["input"])
+            content, is_error = await _execute(maker, ctx, call["name"], call["input"])
             results.append(_result_block(call["id"], content, is_error))
     return {"role": "user", "content": results}
 
 
 async def run_chat(
     maker: async_sessionmaker[AsyncSession],
-    user: User,
+    ctx: ToolContext,
     history: list[dict],
     decisions: dict[str, bool],
     provider: LlmProvider,
@@ -136,11 +135,11 @@ async def run_chat(
 ) -> ChatResult:
     device_results = device_results or {}
     history = list(history)
-    available = tools_for(user.permissions)
+    available = tools_for(ctx)
 
     # Resume: the last assistant turn has tool calls awaiting results.
     if history and history[-1]["role"] == "assistant" and _tool_uses(history[-1]):
-        history.append(await _resolve(maker, user, _tool_uses(history[-1]), decisions, device_results))
+        history.append(await _resolve(maker, ctx, _tool_uses(history[-1]), decisions, device_results))
 
     for _ in range(max_steps):
         blocks = await provider.chat(_system_prompt(tz_name), history, available)
@@ -149,7 +148,7 @@ async def run_chat(
         if not calls:
             text = "".join(b["text"] for b in blocks if b["type"] == "text")
             return ChatResult(history=history, reply=text)
-        client_calls = [c for c in calls if _needs_client(user, c)]
+        client_calls = [c for c in calls if _needs_client(ctx, c)]
         if client_calls:
             return ChatResult(
                 history=history,
@@ -158,6 +157,6 @@ async def run_chat(
                     for c in client_calls
                 ],
             )
-        history.append(await _resolve(maker, user, calls, {}, {}))
+        history.append(await _resolve(maker, ctx, calls, {}, {}))
 
     return ChatResult(history=history, reply="I couldn't finish that. Please try again.")

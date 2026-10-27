@@ -7,7 +7,21 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.access import Actor
+from app.roles import GardenPermission, GardenRole, role_allows
 from app.services import plants
+
+
+@dataclass(frozen=True)
+class ToolContext:
+    """Who is chatting and in which garden. Built server-side from the token and membership, never from the model."""
+
+    garden_id: int
+    actor: Actor
+    role: GardenRole
+
+    def allows(self, permission: GardenPermission) -> bool:
+        return role_allows(self.role, permission)
 
 
 @dataclass(frozen=True)
@@ -15,8 +29,8 @@ class Tool:
     name: str
     description: str
     input_model: type[BaseModel]
-    handler: Callable[[AsyncSession, str, BaseModel], Awaitable[object]]  # (session, user_id, validated input) -> JSON-able
-    permission: str
+    handler: Callable[[AsyncSession, ToolContext, BaseModel], Awaitable[object]]  # -> JSON-able
+    permission: GardenPermission
     confirm: bool = False
     runs_on: Literal["server", "device"] = "server"
 
@@ -66,12 +80,16 @@ async def _device_only(*_):
     raise RuntimeError("Device tools run on the phone, not the server.")
 
 
-async def _list_plants(session: AsyncSession, user_id: str, _: ListPlantsInput):
-    return [p.model_dump() for p in await plants.list_plants(session, user_id)]
+async def _list_plants(session: AsyncSession, ctx: ToolContext, _: ListPlantsInput):
+    return [p.model_dump() for p in await plants.list_plants(session, ctx.garden_id)]
 
 
-async def _update_plant(session: AsyncSession, user_id: str, args: UpdatePlantInput):
-    return (await plants.update_plant(session, user_id, args.plant_id, args.field, args.value)).model_dump()
+async def _update_plant(session: AsyncSession, ctx: ToolContext, args: UpdatePlantInput):
+    return (await plants.update_plant(session, ctx.garden_id, ctx.actor, args.plant_id, args.field, args.value)).model_dump()
+
+
+async def _add_plant(session: AsyncSession, ctx: ToolContext, args: plants.NewPlant):
+    return (await plants.create_plant(session, ctx.garden_id, ctx.actor, args)).model_dump()
 
 
 TOOLS: dict[str, Tool] = {
@@ -79,17 +97,25 @@ TOOLS: dict[str, Tool] = {
     for t in [
         Tool(
             name="list_plants",
-            description="List the user's plants with their ids and care settings.",
+            description="List the plants in this garden with their ids and care settings.",
             input_model=ListPlantsInput,
             handler=_list_plants,
-            permission="plants:read",
+            permission=GardenPermission.VIEW,
+        ),
+        Tool(
+            name="add_plant",
+            description="Add a plant to this garden.",
+            input_model=plants.NewPlant,
+            handler=_add_plant,
+            permission=GardenPermission.PLANTS_CREATE,
+            confirm=True,
         ),
         Tool(
             name="update_plant",
-            description="Change one field of one of the user's plants. Use list_plants first to get the id.",
+            description="Change one field of one plant in this garden. Use list_plants first to get the id.",
             input_model=UpdatePlantInput,
             handler=_update_plant,
-            permission="plants:write",
+            permission=GardenPermission.PLANTS_EDIT,
             confirm=True,
         ),
         Tool(
@@ -97,7 +123,7 @@ TOOLS: dict[str, Tool] = {
             description="Schedule a notification on the user's phone at a local time.",
             input_model=SetReminderInput,
             handler=_device_only,
-            permission="reminders:write",
+            permission=GardenPermission.VIEW,  # personal, on the phone: any member
             runs_on="device",
         ),
         Tool(
@@ -105,7 +131,7 @@ TOOLS: dict[str, Tool] = {
             description="Open the user's calendar app with a prefilled event; the user saves it there.",
             input_model=AddCalendarEventInput,
             handler=_device_only,
-            permission="calendar:write",
+            permission=GardenPermission.VIEW,
             confirm=True,
             runs_on="device",
         ),
@@ -113,6 +139,6 @@ TOOLS: dict[str, Tool] = {
 }
 
 
-def tools_for(permissions: frozenset[str]) -> list[Tool]:
-    """Only tools the user is allowed to use are ever shown to the model."""
-    return [t for t in TOOLS.values() if t.permission in permissions]
+def tools_for(ctx: ToolContext) -> list[Tool]:
+    """Only tools the caller's garden role allows are ever shown to the model."""
+    return [t for t in TOOLS.values() if ctx.allows(t.permission)]

@@ -10,7 +10,7 @@ from sqlalchemy.orm import aliased
 
 from app.access import Actor, GardenAccess
 from app.errors import Conflict, Forbidden, NotFound
-from app.models import GardenEventRow, GardenMemberRow, GardenRow, UserRow
+from app.models import GardenEventRow, GardenMemberRow, GardenRow, PlantRow, UserRow
 from app.roles import GardenPermission, GardenRole, role_allows
 from app.services import events, users
 from app.services.text import normalize_name
@@ -105,11 +105,12 @@ async def restore(session: AsyncSession, access: GardenAccess, retention_days: i
 
 
 async def purge_deleted(session: AsyncSession, retention_days: int, now: datetime | None = None) -> int:
-    """Hard-deletes gardens soft-deleted more than `retention_days` ago, with their members and history."""
+    """Hard-deletes gardens soft-deleted more than `retention_days` ago, with their plants, members and history."""
     cutoff = (now or datetime.now(UTC)) - timedelta(days=retention_days)
     ids = list(await session.scalars(select(GardenRow.id).where(GardenRow.deleted_at < cutoff)))
     if ids:
         # Explicit child deletes so this doesn't depend on the database enforcing ON DELETE CASCADE.
+        await session.execute(delete(PlantRow).where(PlantRow.garden_id.in_(ids)))
         await session.execute(delete(GardenEventRow).where(GardenEventRow.garden_id.in_(ids)))
         await session.execute(delete(GardenMemberRow).where(GardenMemberRow.garden_id.in_(ids)))
         await session.execute(delete(GardenRow).where(GardenRow.id.in_(ids)))

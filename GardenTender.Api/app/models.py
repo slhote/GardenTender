@@ -14,7 +14,8 @@ class PlantRow(Base):
     __tablename__ = "plants"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[str] = mapped_column(String, index=True)  # Auth0 `sub`
+    garden_id: Mapped[int] = mapped_column(ForeignKey("gardens.id", ondelete="CASCADE"), index=True)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
     name: Mapped[str] = mapped_column(String)
     species: Mapped[str] = mapped_column(String, default="")
     notes: Mapped[str] = mapped_column(String, default="")

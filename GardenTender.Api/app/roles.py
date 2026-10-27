@@ -18,10 +18,19 @@ class GardenPermission(StrEnum):
     MANAGE = "garden:manage"  # rename, delete, restore
     MANAGE_MEMBERS = "members:manage"  # change roles, remove others
     ADD_MEMBER_DIRECTLY = "members:add"  # global admin only; everyone else joins through invites
+    CHAT = "chat:use"  # members only: the global admin override never applies to chat
+    PLANTS_EDIT = "plants:edit"
+    PLANTS_CREATE = "plants:create"  # contributors go through an approval request instead
+    PLANTS_DELETE = "plants:delete"
 
 
-_CONTRIBUTOR = frozenset({GardenPermission.VIEW})
-_ADMIN = _CONTRIBUTOR | {GardenPermission.MANAGE, GardenPermission.MANAGE_MEMBERS}
+_CONTRIBUTOR = frozenset({GardenPermission.VIEW, GardenPermission.CHAT, GardenPermission.PLANTS_EDIT})
+_ADMIN = _CONTRIBUTOR | {
+    GardenPermission.MANAGE,
+    GardenPermission.MANAGE_MEMBERS,
+    GardenPermission.PLANTS_CREATE,
+    GardenPermission.PLANTS_DELETE,
+}
 
 ROLE_PERMISSIONS: dict[GardenRole, frozenset[GardenPermission]] = {
     GardenRole.CONTRIBUTOR: _CONTRIBUTOR,
