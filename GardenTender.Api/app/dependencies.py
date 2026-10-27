@@ -40,7 +40,10 @@ def require_garden(permission: GardenPermission, *, allow_deleted: bool = False,
     """
 
     async def resolve(
-        garden_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+        garden_id: int,
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_session),
+        _: UserRow = Depends(current_account),  # actions record the caller (created_by etc.), so their row must exist
     ) -> GardenAccess:
         return await access.resolve(
             session, garden_id, user, permission, allow_deleted=allow_deleted, allow_override=allow_override

@@ -1,6 +1,4 @@
 """Test helpers shared across test modules (fixtures live in conftest.py)."""
-import asyncio
-
 from app.auth import User, authenticate
 from app.db import get_sessionmaker
 from app.main import app
@@ -42,30 +40,26 @@ def provider(turns):
 GLOBAL_ADMIN = frozenset({"system:admin"})
 
 
-def onboard(client, sub, handle=None, perms=NO_PERMS):
+async def onboard(client, sub, handle=None, perms=NO_PERMS):
     """Logs in as `sub` and completes onboarding with `handle` (defaults to the part of the sub after '|')."""
     login(perms, sub=sub)
     handle = handle or sub.split("|")[-1]
-    assert client.patch("/me", json={"handle": handle, "display_name": handle.title()}).status_code == 200
+    assert (await client.patch("/me", json={"handle": handle, "display_name": handle.title()})).status_code == 200
     return handle
 
 
-def create_garden(client, sub, name="Backyard"):
+async def create_garden(client, sub, name="Backyard"):
     login(sub=sub)
-    r = client.post("/gardens", json={"name": name})
+    r = await client.post("/gardens", json={"name": name})
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
 
-def run_db(fn):
+async def run_db(fn):
     """Runs `await fn(session)` against the test database and returns its result."""
     maker = app.dependency_overrides[get_sessionmaker]()
-
-    async def run():
-        async with maker() as session:
-            return await fn(session)
-
-    return asyncio.run(run())
+    async with maker() as session:
+        return await fn(session)
 
 
 class CapturingEmailSender:
@@ -85,17 +79,17 @@ def capture_emails():
     return sender.sent
 
 
-def add_member(client, garden_id, handle, role="contributor"):
+async def add_member(client, garden_id, handle, role="contributor"):
     """Adds a member directly as the global admin. Callers log in again afterwards."""
     login(GLOBAL_ADMIN, sub="auth0|root")
-    r = client.post(f"/gardens/{garden_id}/members", json={"handle": handle, "role": role})
+    r = await client.post(f"/gardens/{garden_id}/members", json={"handle": handle, "role": role})
     assert r.status_code == 201, r.text
 
 
-def garden_with_contributor(client):
+async def garden_with_contributor(client):
     """ann (admin) owns a garden and bob is a contributor. Returns the garden id."""
-    onboard(client, "auth0|ann")
-    gid = create_garden(client, "auth0|ann")
-    onboard(client, "auth0|bob")
-    add_member(client, gid, "bob")
+    await onboard(client, "auth0|ann")
+    gid = await create_garden(client, "auth0|ann")
+    await onboard(client, "auth0|bob")
+    await add_member(client, gid, "bob")
     return gid

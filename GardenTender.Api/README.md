@@ -25,6 +25,17 @@ Tests use a throwaway SQLite file, so they need no Docker, Postgres or API key. 
 
 If your local database predates Alembic, wipe it once: `docker compose down -v`.
 
+### Running the tests against Postgres
+
+The tests are async (pytest-asyncio) and drive the app in-process with `httpx.AsyncClient`. They use SQLite (with foreign keys enforced) by default; to run the same suite on Postgres, point `TEST_DATABASE_URL` at a scratch database. It is wiped before every test, so never use your dev database:
+
+```bash
+docker compose exec db createdb -U <POSTGRES_USER> gt_test
+```
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@127.0.0.1:5432/gt_test uv run pytest
+```
+
 ## Public links in local dev (invites, QR codes)
 
 Invite emails and QR codes link to `PUBLIC_BASE_URL` (`/i/<token>`, `/q/<token>`). Android App Links only open in the app when that origin is public **https** and serves `/.well-known/assetlinks.json`, so locally the API is exposed through an [ngrok](https://ngrok.com) static domain, the same way it will run behind a real domain later:
