@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
+from app.roles import SYSTEM_ADMIN
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -16,13 +17,17 @@ class User:
     permissions: frozenset[str]
     email: str | None = None  # added to the access token by an Auth0 Action
 
+    @property
+    def is_global_admin(self) -> bool:
+        return SYSTEM_ADMIN in self.permissions
+
 
 @lru_cache
 def _jwks_client() -> jwt.PyJWKClient:
     return jwt.PyJWKClient(f"https://{get_settings().auth0_domain}/.well-known/jwks.json")
 
 
-def get_current_user(
+def authenticate(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> User:
     """Verifies the Auth0 access token (signature, issuer, audience, expiry)."""
@@ -45,6 +50,12 @@ def get_current_user(
         permissions=frozenset(claims.get("permissions", [])),
         email=claims.get(f"{settings.auth0_claims_namespace}email"),
     )
+
+
+def get_current_user(request: Request, user: User = Depends(authenticate)) -> User:
+    """The authenticated caller. Also exposed on `request.state.user` for middleware (admin audit log)."""
+    request.state.user = user
+    return user
 
 
 def require_permission(permission: str):

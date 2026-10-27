@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 5
     database_url: str = ""
+    garden_retention_days: int = 15  # soft-deleted gardens are restorable this long, then purged
 
 
 @lru_cache
