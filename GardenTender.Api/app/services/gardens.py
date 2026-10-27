@@ -10,7 +10,7 @@ from sqlalchemy.orm import aliased
 
 from app.access import Actor, GardenAccess
 from app.errors import Conflict, Forbidden, NotFound
-from app.models import GardenEventRow, GardenMemberRow, GardenRequestRow, GardenRow, PlantRow, UserRow
+from app.models import GardenEventRow, GardenMemberRow, GardenRequestRow, GardenRow, InviteRow, PlantRow, UserRow
 from app.roles import GardenPermission, GardenRole, role_allows
 from app.services import events, users
 from app.services.text import normalize_name
@@ -110,6 +110,7 @@ async def purge_deleted(session: AsyncSession, retention_days: int, now: datetim
     ids = list(await session.scalars(select(GardenRow.id).where(GardenRow.deleted_at < cutoff)))
     if ids:
         # Explicit child deletes so this doesn't depend on the database enforcing ON DELETE CASCADE.
+        await session.execute(delete(InviteRow).where(InviteRow.garden_id.in_(ids)))
         await session.execute(delete(GardenRequestRow).where(GardenRequestRow.garden_id.in_(ids)))
         await session.execute(delete(PlantRow).where(PlantRow.garden_id.in_(ids)))
         await session.execute(delete(GardenEventRow).where(GardenEventRow.garden_id.in_(ids)))

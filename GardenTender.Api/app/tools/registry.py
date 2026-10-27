@@ -19,6 +19,7 @@ class ToolContext:
     garden_id: int
     actor: Actor
     role: GardenRole
+    request_deps: "requests.RequestDeps"
 
     def allows(self, permission: GardenPermission) -> bool:
         return role_allows(self.role, permission)
@@ -94,7 +95,9 @@ class AddPlantInput(plants.NewPlant):
 
 async def _add_plant(session: AsyncSession, ctx: ToolContext, args: AddPlantInput):
     payload = args.model_dump(exclude={"note"})
-    request = await requests.submit(session, ctx.garden_id, ctx.actor, ctx.role, "create_plant", payload, args.note)
+    request = await requests.submit(
+        session, ctx.garden_id, ctx.actor, ctx.role, "create_plant", payload, args.note, ctx.request_deps
+    )
     return request.model_dump(mode="json", include={"id", "status", "result"})
 
 

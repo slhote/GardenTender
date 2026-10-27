@@ -1,14 +1,20 @@
 """FastAPI dependencies shared by routers: the caller's account and their access to a garden."""
+from datetime import timedelta
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.access import GardenAccess
 from app.auth import User, get_current_user
+from app.config import Settings, get_settings
 from app.db import get_session
 from app.errors import Forbidden
 from app.models import UserRow
 from app.roles import GardenPermission
 from app.services import access, users
+from app.services.email import ConsoleEmailSender, EmailSender
+from app.services.notifier import Links, Notifier
+from app.services.requests import RequestDeps
 
 
 async def current_account(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> UserRow:
@@ -41,3 +47,21 @@ def require_garden(permission: GardenPermission, *, allow_deleted: bool = False,
         )
 
     return resolve
+
+
+def get_email_sender(settings: Settings = Depends(get_settings)) -> EmailSender:
+    if settings.email_backend == "console":
+        return ConsoleEmailSender()
+    raise RuntimeError(f"Unknown EMAIL_BACKEND {settings.email_backend!r}")
+
+
+def get_links(settings: Settings = Depends(get_settings)) -> Links:
+    return Links(settings.public_base_url)
+
+
+def get_notifier(email: EmailSender = Depends(get_email_sender), links: Links = Depends(get_links)) -> Notifier:
+    return Notifier(email, links)  # one per request: it queues emails until the request's transaction commits
+
+
+def get_request_deps(notifier: Notifier = Depends(get_notifier), settings: Settings = Depends(get_settings)) -> RequestDeps:
+    return RequestDeps(notifier, timedelta(days=settings.invite_ttl_days))

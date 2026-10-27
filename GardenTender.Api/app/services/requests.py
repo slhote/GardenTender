@@ -6,7 +6,7 @@ holds the kind's direct permission (admins) are auto-approved: the request is re
 """
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 
 from pydantic import BaseModel, ValidationError
@@ -16,9 +16,10 @@ from sqlalchemy.orm import aliased
 
 from app.access import Actor, GardenAccess
 from app.errors import Conflict, Forbidden, InvalidInput, NotFound
-from app.models import GardenRequestRow, UserRow
+from app.models import GardenRequestRow, GardenRow, UserRow
 from app.roles import GardenPermission, GardenRole, role_allows
-from app.services import events, plants
+from app.services import events, invites, plants
+from app.services.notifier import Notifier
 
 NOTE_MAX = 500
 
@@ -31,10 +32,26 @@ class RequestStatus(StrEnum):
 
 
 @dataclass(frozen=True)
+class RequestDeps:
+    """Collaborators a request may need when applied. Injected by the caller (router or chat)."""
+
+    notifier: Notifier
+    invite_ttl: timedelta
+
+
+@dataclass(frozen=True)
+class ApplyContext:
+    session: AsyncSession
+    garden: GardenRow
+    actor: Actor
+    deps: RequestDeps
+
+
+@dataclass(frozen=True)
 class RequestKind:
     direct_permission: GardenPermission  # holders skip the queue
     validate: Callable[[dict], dict]  # returns the normalized payload; raises InvalidInput
-    apply: Callable[[AsyncSession, int, Actor, dict], Awaitable[dict]]  # runs on approval, without committing; returns `result`
+    apply: Callable[[ApplyContext, dict], Awaitable[dict]]  # runs on approval, without committing; returns `result`
 
 
 def _model_payload(model: type[BaseModel], normalize: Callable[[BaseModel], BaseModel] = lambda m: m) -> Callable[[dict], dict]:
@@ -47,9 +64,15 @@ def _model_payload(model: type[BaseModel], normalize: Callable[[BaseModel], Base
     return validate
 
 
-async def _apply_create_plant(session: AsyncSession, garden_id: int, actor: Actor, payload: dict) -> dict:
-    plant = await plants.create_plant(session, garden_id, actor, plants.NewPlant(**payload), commit=False)
+async def _apply_create_plant(ctx: ApplyContext, payload: dict) -> dict:
+    plant = await plants.create_plant(ctx.session, ctx.garden.id, ctx.actor, plants.NewPlant(**payload), commit=False)
     return {"plant_id": plant.id}
+
+
+async def _apply_invite(ctx: ApplyContext, payload: dict) -> dict:
+    target = invites.InviteTarget.model_validate(payload)
+    invite = await invites.create(ctx.session, ctx.garden, ctx.actor, target, ctx.deps.notifier, ctx.deps.invite_ttl)
+    return {"invite_id": invite.id}
 
 
 KINDS: dict[str, RequestKind] = {
@@ -57,6 +80,12 @@ KINDS: dict[str, RequestKind] = {
         direct_permission=GardenPermission.PLANTS_CREATE,
         validate=_model_payload(plants.NewPlant, plants.validate_new),
         apply=_apply_create_plant,
+    ),
+    # A contributor names who to invite; role defaults to contributor and the admin may change it before approving.
+    "invite_user": RequestKind(
+        direct_permission=GardenPermission.INVITE,
+        validate=_model_payload(invites.InviteTarget),
+        apply=_apply_invite,
     ),
 }
 
@@ -92,7 +121,14 @@ def _text(value: str | None, label: str) -> str | None:
 
 
 async def submit(
-    session: AsyncSession, garden_id: int, actor: Actor, role: GardenRole | None, type: str, payload: dict, note: str | None
+    session: AsyncSession,
+    garden_id: int,
+    actor: Actor,
+    role: GardenRole | None,
+    type: str,
+    payload: dict,
+    note: str | None,
+    deps: RequestDeps,
 ) -> RequestOut:
     kind = _kind(type)
     row = GardenRequestRow(
@@ -107,8 +143,9 @@ async def submit(
     await session.flush()
     events.record(session, garden_id, actor, "request.created", request_id=row.id, type=type)
     if actor.via_global_admin or (role is not None and role_allows(role, kind.direct_permission)):
-        await _approve(session, row, kind, actor, reason=None)
+        await _approve(session, row, kind, actor, None, deps)
     await session.commit()
+    await deps.notifier.flush()
     return await get(session, garden_id, row.id)
 
 
@@ -153,10 +190,13 @@ async def edit(session: AsyncSession, access: GardenAccess, request_id: int, pay
     return await get(session, access.garden.id, row.id)
 
 
-async def approve(session: AsyncSession, access: GardenAccess, request_id: int, reason: str | None) -> RequestOut:
+async def approve(
+    session: AsyncSession, access: GardenAccess, request_id: int, reason: str | None, deps: RequestDeps
+) -> RequestOut:
     row = await _pending(session, access.garden.id, request_id)
-    await _approve(session, row, _kind(row.type), access.actor, _text(reason, "Reason"))
+    await _approve(session, row, _kind(row.type), access.actor, _text(reason, "Reason"), deps)
     await session.commit()
+    await deps.notifier.flush()
     return await get(session, access.garden.id, row.id)
 
 
@@ -179,8 +219,11 @@ async def cancel(session: AsyncSession, access: GardenAccess, request_id: int) -
     return await get(session, access.garden.id, row.id)
 
 
-async def _approve(session: AsyncSession, row: GardenRequestRow, kind: RequestKind, actor: Actor, reason: str | None) -> None:
-    row.result = await kind.apply(session, row.garden_id, actor, row.payload)
+async def _approve(
+    session: AsyncSession, row: GardenRequestRow, kind: RequestKind, actor: Actor, reason: str | None, deps: RequestDeps
+) -> None:
+    garden = await session.get(GardenRow, row.garden_id)
+    row.result = await kind.apply(ApplyContext(session, garden, actor, deps), row.payload)
     _decide(row, RequestStatus.APPROVED, actor, reason)
     events.record(session, row.garden_id, actor, "request.approved", request_id=row.id, reason=reason, result=row.result)
 
