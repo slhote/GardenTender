@@ -42,4 +42,4 @@ Tables are created on startup; there are no migrations yet (add Alembic before c
 
 **Convention (see `GardenTender.Api/PLAN.md`).** Don't hand-build features LangChain/LangGraph will later own (streaming, retries, token counting, memory, cross-provider normalization). Keep the seams (`run_chat`, `LlmProvider`, tool registry, `services/`) free of framework dependencies.
 
-**Android.** Single-module Compose app with Hilt-style DI in `di/AppModule.kt`, Auth0 + biometric login in `auth/`, QR scan/generate in `qr/`, and screens in `ui/Screens.kt`.
+**Android.** Single-module Compose app, packaged by feature (`auth/`, `home/`, `qr/`, `settings/`, `chat/`), one screen per file with its ViewModel beside it. Koin DI in `di/AppModule.kt` (inject collaborators; don't read `BuildConfig` or `getSharedPreferences` directly, use `AppConfig` / `SettingsStore`). Routes and the `NavHost` live in `navigation/`; shared UI in `ui/`. Exceptions become user-facing text only in `error/ErrorMessages.kt`; logic layers throw typed errors (e.g. `ChatApiException`).

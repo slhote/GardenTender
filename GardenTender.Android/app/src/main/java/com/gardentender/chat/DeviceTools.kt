@@ -24,7 +24,11 @@ data class DeviceResult(val content: String, val isError: Boolean = false)
  * validated the arguments; this still handles anything the device itself can reject (past times, disabled
  * notifications, no calendar app).
  */
-class DeviceTools(private val context: Context, private val activities: ActivityTracker) {
+class DeviceTools(
+    private val context: Context,
+    private val activities: ActivityTracker,
+    private val workManager: WorkManager,
+) {
     fun execute(call: PendingCall): DeviceResult = try {
         when (call.name) {
             "set_reminder" -> setReminder(call.input)
@@ -48,7 +52,7 @@ class DeviceTools(private val context: Context, private val activities: Activity
             .setInitialDelay(delay.toMillis(), TimeUnit.MILLISECONDS)
             .setInputData(workDataOf(ReminderWorker.KEY_TEXT to input.getString("text")))
             .build()
-        WorkManager.getInstance(context).enqueue(request)
+        workManager.enqueue(request)
         return DeviceResult("Reminder set for ${at.format(DISPLAY)}.")
     }
 
