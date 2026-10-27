@@ -3,12 +3,12 @@
 Every query is scoped by `garden_id`; callers have already resolved the caller's access to that garden.
 """
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.access import Actor
 from app.errors import InvalidInput, NotFound
-from app.models import PlantRow
+from app.models import PlantRow, QrCodeRow
 from app.services import events
 from app.services.text import normalize_name
 
@@ -89,6 +89,8 @@ async def update_plant(session: AsyncSession, garden_id: int, actor: Actor, plan
 
 async def delete_plant(session: AsyncSession, garden_id: int, actor: Actor, plant_id: int) -> None:
     row = await _get(session, garden_id, plant_id)
+    # Explicit so it doesn't depend on the database enforcing ON DELETE CASCADE.
+    await session.execute(delete(QrCodeRow).where(QrCodeRow.plant_id == plant_id))
     await session.delete(row)
     events.record(session, garden_id, actor, "plant.deleted", plant_id=plant_id, name=row.name)
     await session.commit()

@@ -121,3 +121,19 @@ class InviteRow(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class QrCodeRow(Base):
+    """A printable, retargetable code. It encodes only `/q/<token>`; the target is resolved by the API."""
+
+    __tablename__ = "qr_codes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(String, unique=True)
+    garden_id: Mapped[int] = mapped_column(ForeignKey("gardens.id", ondelete="CASCADE"), index=True)
+    target_type: Mapped[str] = mapped_column(String)  # app.services.qr_codes.QrTarget
+    # One nullable foreign key per target type, so a code is deleted with its target.
+    plant_id: Mapped[int | None] = mapped_column(ForeignKey("plants.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str | None] = mapped_column(String)
+    created_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

@@ -25,6 +25,7 @@ class GardenPermission(StrEnum):
     FILE_REQUESTS = "requests:file"  # ask for something the role can't do directly; admins are auto-approved
     DECIDE_REQUESTS = "requests:decide"  # see all requests, edit, approve, reject
     INVITE = "invites:create"  # invite directly, QR invites, list and revoke invites
+    QR_MANAGE = "qr:manage"  # create, list, retarget and delete printable QR codes
 
 
 _CONTRIBUTOR = frozenset(
@@ -37,6 +38,7 @@ _ADMIN = _CONTRIBUTOR | {
     GardenPermission.PLANTS_DELETE,
     GardenPermission.DECIDE_REQUESTS,
     GardenPermission.INVITE,
+    GardenPermission.QR_MANAGE,
 }
 
 ROLE_PERMISSIONS: dict[GardenRole, frozenset[GardenPermission]] = {
