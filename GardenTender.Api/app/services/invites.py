@@ -59,6 +59,7 @@ class InviteOut(BaseModel):
     email: str | None  # only the address the inviter typed
     role: GardenRole
     invited_by: str | None
+    approved_by: str | None
     expires_at: datetime
 
 
@@ -75,6 +76,7 @@ class MyInvite(BaseModel):
     garden_name: str
     role: GardenRole
     invited_by: str | None
+    approved_by: str | None
     expires_at: datetime
 
 
@@ -102,8 +104,13 @@ async def create(
     target: InviteTarget,
     notifier: Notifier,
     ttl: timedelta,
+    requested_by: str | None = None,
 ) -> InviteOut:
-    """Creates and queues the invite email (sent after the caller commits). Does not commit."""
+    """Creates and queues the invite email (sent after the caller commits). Does not commit.
+
+    `requested_by` is the contributor whose approved request this is; `actor` is then the approving admin.
+    """
+    on_behalf = requested_by is not None and requested_by != actor.sub
     invitee: UserRow | None = None
     if target.handle is not None:
         invitee = await users.get_by_handle(session, target.handle)
@@ -122,7 +129,8 @@ async def create(
         token_hash=hash_token(token),
         via=via,
         role=target.role,
-        invited_by=actor.sub,
+        invited_by=requested_by if on_behalf else actor.sub,
+        approved_by=actor.sub if on_behalf else None,
         invitee_sub=invitee.sub if invitee else None,
         email=target.email,
         expires_at=_now() + ttl,
@@ -136,12 +144,11 @@ async def create(
 
     send_to = target.email or (invitee.email if invitee else None)
     if send_to:
-        inviter = await session.get(UserRow, actor.sub)
-        inviter_name = f"@{inviter.handle}" if inviter and inviter.handle else "Someone"
+        names = await _names(session, row.invited_by, row.approved_by)
         notifier.queue_email(
             send_to,
             f"You're invited to {garden.name} on GardenTender",
-            f"{inviter_name} invited you to join the garden \"{garden.name}\" as {target.role}.\n\n"
+            f"{names} invited you to join the garden \"{garden.name}\" as {target.role}.\n\n"
             f"Accept the invite: {notifier.links.invite(token)}\n\n"
             f"The link works once and expires on {row.expires_at:%Y-%m-%d}.",
         )
@@ -182,18 +189,21 @@ async def revoke(session: AsyncSession, access: GardenAccess, invite_id: int) ->
 
 
 async def mine(session: AsyncSession, sub: str) -> list[MyInvite]:
-    inviter = aliased(UserRow)
+    inviter, approver = aliased(UserRow), aliased(UserRow)
     rows = await session.execute(
         _pending_query()
-        .add_columns(GardenRow.name, inviter.handle)
+        .add_columns(GardenRow.name, inviter.handle, approver.handle)
         .join(GardenRow, GardenRow.id == InviteRow.garden_id)
         .outerjoin(inviter, inviter.sub == InviteRow.invited_by)
+        .outerjoin(approver, approver.sub == InviteRow.approved_by)
         .where(InviteRow.invitee_sub == sub, GardenRow.deleted_at.is_(None))
         .order_by(InviteRow.id)
     )
     return [
-        MyInvite(id=r.id, garden_id=r.garden_id, garden_name=name, role=r.role, invited_by=inv, expires_at=r.expires_at)
-        for r, name, inv in rows
+        MyInvite(
+            id=r.id, garden_id=r.garden_id, garden_name=name, role=r.role, invited_by=inv, approved_by=appr, expires_at=r.expires_at
+        )
+        for r, name, inv, appr in rows
     ]
 
 
@@ -233,10 +243,26 @@ async def _accept(session: AsyncSession, row: InviteRow | None, account: UserRow
     if await session.get(GardenMemberRow, (garden.id, account.sub)) is not None:
         raise Conflict("You're already a member of this garden.")
     row.accepted_at, row.accepted_by = _now(), account.sub
-    session.add(GardenMemberRow(garden_id=garden.id, user_sub=account.sub, role=row.role, invited_by=row.invited_by))
+    session.add(
+        GardenMemberRow(
+            garden_id=garden.id, user_sub=account.sub, role=row.role, invited_by=row.invited_by, approved_by=row.approved_by
+        )
+    )
     events.record(session, garden.id, Actor(account.sub), "member.joined", invite_id=row.id, handle=account.handle, role=row.role)
     await session.commit()
     return garden.id
+
+
+async def _names(session: AsyncSession, invited_by: str | None, approved_by: str | None) -> str:
+    """"@bob" or "@bob (approved by @ann)" for the invite email."""
+
+    async def handle(sub: str | None) -> str | None:
+        user = await session.get(UserRow, sub) if sub else None
+        return f"@{user.handle}" if user and user.handle else None
+
+    inviter = await handle(invited_by) or "Someone"
+    approver = await handle(approved_by)
+    return f"{inviter} (approved by {approver})" if approver else inviter
 
 
 def _check_usable(row: InviteRow | None) -> None:
@@ -263,6 +289,7 @@ def _pending_query():
 async def _out(session: AsyncSession, row: InviteRow) -> InviteOut:
     invitee = await session.get(UserRow, row.invitee_sub) if row.via == InviteVia.HANDLE and row.invitee_sub else None
     inviter = await session.get(UserRow, row.invited_by) if row.invited_by else None
+    approver = await session.get(UserRow, row.approved_by) if row.approved_by else None
     return InviteOut(
         id=row.id,
         via=row.via,
@@ -270,6 +297,7 @@ async def _out(session: AsyncSession, row: InviteRow) -> InviteOut:
         email=row.email,
         role=row.role,
         invited_by=inviter.handle if inviter else None,
+        approved_by=approver.handle if approver else None,
         expires_at=row.expires_at,
     )
 
