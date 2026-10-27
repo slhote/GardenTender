@@ -1,10 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.errors import Conflict, DomainError, InvalidInput, NotFound
+from app.errors import Conflict, DomainError, Forbidden, InvalidInput, NotFound
 from app.llm.base import LlmUnavailable
 
-_STATUS: dict[type[DomainError], int] = {InvalidInput: 400, NotFound: 404, Conflict: 409}
+_STATUS: dict[type[DomainError], int] = {InvalidInput: 400, Forbidden: 403, NotFound: 404, Conflict: 409}
 
 
 def _status_for(exc: DomainError) -> int:

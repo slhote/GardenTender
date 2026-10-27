@@ -2,15 +2,28 @@
 import re
 
 from pydantic import BaseModel
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import User
 from app.errors import Conflict, InvalidInput
-from app.models import UserRow
+from app.models import GardenMemberRow, UserRow
+from app.services.text import normalize_name
 
 HANDLE_RE = re.compile(r"[a-z0-9_]{3,20}")
 DISPLAY_NAME_MAX = 50
+
+
+SEARCH_MIN_CHARS = 2
+SEARCH_LIMIT = 20
+
+
+class PublicUser(BaseModel):
+    """What other users may see about someone. Never includes email."""
+
+    handle: str
+    display_name: str
 
 
 class Me(BaseModel):
@@ -20,12 +33,16 @@ class Me(BaseModel):
     onboarded: bool
 
 
+def is_onboarded(row: UserRow) -> bool:
+    return row.handle is not None and row.display_name is not None
+
+
 def to_me(row: UserRow) -> Me:
     return Me(
         handle=row.handle,
         display_name=row.display_name,
         email=row.email,
-        onboarded=row.handle is not None and row.display_name is not None,
+        onboarded=is_onboarded(row),
     )
 
 
@@ -55,10 +72,7 @@ def normalize_handle(handle: str) -> str:
 
 
 def normalize_display_name(name: str) -> str:
-    n = " ".join(name.split())
-    if not 1 <= len(n) <= DISPLAY_NAME_MAX:
-        raise InvalidInput(f"Display name must be 1-{DISPLAY_NAME_MAX} characters.")
-    return n
+    return normalize_name(name, "Display name", DISPLAY_NAME_MAX)
 
 
 async def set_profile(session: AsyncSession, user: User, handle: str | None, display_name: str | None) -> Me:
@@ -77,3 +91,34 @@ async def set_profile(session: AsyncSession, user: User, handle: str | None, dis
         await session.rollback()
         raise Conflict("That handle is taken.")
     return to_me(row)
+
+
+async def get_by_handle(session: AsyncSession, handle: str) -> UserRow | None:
+    return await session.scalar(select(UserRow).where(UserRow.handle == handle.strip().lstrip("@").lower()))
+
+
+async def is_member_anywhere(session: AsyncSession, sub: str) -> bool:
+    return await session.scalar(select(GardenMemberRow.user_sub).where(GardenMemberRow.user_sub == sub).limit(1)) is not None
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def search(session: AsyncSession, query: str) -> list[PublicUser]:
+    """Prefix match on handle or display name; only onboarded users."""
+    q = query.strip().lstrip("@")
+    if len(q) < SEARCH_MIN_CHARS:
+        raise InvalidInput(f"Search needs at least {SEARCH_MIN_CHARS} characters.")
+    pattern = _escape_like(q.lower()) + "%"
+    rows = await session.scalars(
+        select(UserRow)
+        .where(
+            UserRow.handle.is_not(None),
+            UserRow.display_name.is_not(None),
+            or_(UserRow.handle.like(pattern, escape="\\"), UserRow.display_name.ilike(pattern, escape="\\")),
+        )
+        .order_by(UserRow.handle)
+        .limit(SEARCH_LIMIT)
+    )
+    return [PublicUser(handle=r.handle, display_name=r.display_name) for r in rows]

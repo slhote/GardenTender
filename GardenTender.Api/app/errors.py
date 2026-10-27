@@ -18,3 +18,7 @@ class NotFound(DomainError):
 
 class Conflict(DomainError):
     pass
+
+
+class Forbidden(DomainError):
+    pass
