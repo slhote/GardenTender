@@ -1,68 +1,11 @@
-import asyncio
-
-import pytest
-from fastapi.testclient import TestClient
-
-from app.auth import User, get_current_user
-from app.db import Base, get_sessionmaker
-from app.main import app, get_provider
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
-ALL = frozenset({"chat:use", "plants:read", "plants:write", "reminders:write", "calendar:write"})
-
-
-class FakeProvider:
-    """Replays scripted assistant turns and records what tools it was offered."""
-
-    def __init__(self, turns):
-        self.turns = list(turns)
-        self.offered = []
-
-    async def chat(self, system, messages, tools):
-        self.offered.append([t.name for t in tools])
-        return self.turns.pop(0)
-
-
-def use(call_id, name, **input):
-    return {"type": "tool_use", "id": call_id, "name": name, "input": input}
-
-
-def text(t):
-    return {"type": "text", "text": t}
-
-
-@pytest.fixture
-def client(tmp_path):
-    """Real SQLAlchemy stack on a throwaway SQLite file, so tests need no Docker or Postgres."""
-    from app import models  # noqa: F401
-
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
-
-    async def setup():
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-
-    asyncio.run(setup())
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-
-    app.dependency_overrides[get_sessionmaker] = lambda: maker
-    yield TestClient(app)  # not used as a context manager, so the Postgres lifespan startup is skipped
-    app.dependency_overrides.clear()
-    asyncio.run(engine.dispose())
+from app.config import Settings, get_settings
+from app.main import app
+from app.routers.chat import ChatRequest, get_provider
+from tests.support import login, provider, text, use
 
 
 def plant_names(client):
     return [p["name"] for p in client.get("/plants").json()]
-
-
-def login(perms=ALL, sub="auth0|u1"):
-    app.dependency_overrides[get_current_user] = lambda: User(sub=sub, permissions=perms)
-
-
-def provider(turns):
-    p = FakeProvider(turns)
-    app.dependency_overrides[get_provider] = lambda: p
-    return p
 
 
 def test_requires_token(client):
@@ -191,24 +134,26 @@ def test_calendar_tool_is_device_and_confirm(client):
     assert pending[0]["runs_on"] == "device" and pending[0]["confirm"] is True
 
 
-def test_missing_anthropic_key_is_a_502_not_a_500(client, monkeypatch):
-    from app.config import Settings, get_settings
-
+def test_missing_anthropic_key_is_a_502_not_a_500(client):
     login()
-    monkeypatch.setattr("app.main.get_settings", lambda: Settings(llm_provider="claude", anthropic_api_key=""))
+    app.dependency_overrides[get_settings] = lambda: Settings(llm_provider="claude", anthropic_api_key="")
     r = client.post("/chat", json={"message": "hi"})
     assert r.status_code == 502
 
 
-def test_model_selection_for_ollama(client, monkeypatch):
-    from app.config import Settings
-    from app.main import app as _app
-
+def test_model_selection_for_ollama(client):
+    settings = Settings(llm_provider="ollama", llm_model="qwen2.5:3b")
     login()
-    monkeypatch.setattr("app.main.get_settings", lambda: Settings(llm_provider="ollama", llm_model="qwen2.5:3b"))
+    app.dependency_overrides[get_settings] = lambda: settings
     assert client.get("/models").json() == {"models": ["gemma4", "qwen3.5:4b", "qwen2.5:3b"], "default": "qwen2.5:3b"}
     assert client.post("/chat", json={"message": "hi", "model": "not-a-model"}).status_code == 400
 
-    from app.main import get_provider, ChatRequest
-    assert get_provider(ChatRequest(model="gemma4"))._model == "gemma4"
-    assert get_provider(ChatRequest())._model == "qwen2.5:3b"
+    assert get_provider(ChatRequest(model="gemma4"), settings)._model == "gemma4"
+    assert get_provider(ChatRequest(), settings)._model == "qwen2.5:3b"
+
+
+def test_direct_endpoint_maps_domain_errors(client):
+    login()
+    client.get("/plants")  # seeds the demo plants
+    assert client.patch("/plants/999", json={"field": "name", "value": "x"}).status_code == 404
+    assert client.patch("/plants/1", json={"field": "water_every_days", "value": "0"}).status_code == 400

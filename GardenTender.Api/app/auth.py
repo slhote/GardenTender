@@ -14,6 +14,7 @@ _bearer = HTTPBearer(auto_error=False)
 class User:
     sub: str
     permissions: frozenset[str]
+    email: str | None = None  # added to the access token by an Auth0 Action
 
 
 @lru_cache
@@ -39,7 +40,11 @@ def get_current_user(
         )
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
-    return User(sub=claims["sub"], permissions=frozenset(claims.get("permissions", [])))
+    return User(
+        sub=claims["sub"],
+        permissions=frozenset(claims.get("permissions", [])),
+        email=claims.get(f"{settings.auth0_claims_namespace}email"),
+    )
 
 
 def require_permission(permission: str):
