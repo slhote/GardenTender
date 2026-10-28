@@ -16,22 +16,22 @@ from app.services.notifier import Notifier
 router = APIRouter(tags=["invites"])
 
 
-class QrInviteIn(BaseModel):
+class QrInviteRequest(BaseModel):
     role: GardenRole = GardenRole.CONTRIBUTOR
 
 
-class AcceptIn(BaseModel):
+class AcceptInviteRequest(BaseModel):
     token: str
 
 
-class Joined(BaseModel):
+class JoinedGardenResponse(BaseModel):
     garden_id: int
 
 
 # Garden admins. Contributors ask for invites through a request of type "invite_user".
-@router.post("/gardens/{garden_id}/invites", response_model=invites.InviteOut, status_code=status.HTTP_201_CREATED)
+@router.post("/gardens/{garden_id}/invites", response_model=invites.InviteResponse, status_code=status.HTTP_201_CREATED)
 async def invite(
-    body: invites.InviteTarget,
+    body: invites.InviteRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.INVITE)),
     session: AsyncSession = Depends(get_session),
     notifier: Notifier = Depends(get_notifier),
@@ -43,9 +43,9 @@ async def invite(
     return out
 
 
-@router.post("/gardens/{garden_id}/invites/qr", response_model=invites.CreatedQrInvite, status_code=status.HTTP_201_CREATED)
+@router.post("/gardens/{garden_id}/invites/qr", response_model=invites.QrInviteResponse, status_code=status.HTTP_201_CREATED)
 async def qr_invite(
-    body: QrInviteIn,
+    body: QrInviteRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.INVITE)),
     session: AsyncSession = Depends(get_session),
     notifier: Notifier = Depends(get_notifier),
@@ -54,7 +54,7 @@ async def qr_invite(
     return await invites.create_qr(session, access, body.role, notifier, timedelta(minutes=settings.qr_invite_ttl_minutes))
 
 
-@router.get("/gardens/{garden_id}/invites", response_model=list[invites.InviteOut])
+@router.get("/gardens/{garden_id}/invites", response_model=list[invites.InviteResponse])
 async def pending_invites(
     access: GardenAccess = Depends(require_garden(GardenPermission.INVITE)), session: AsyncSession = Depends(get_session)
 ):
@@ -71,19 +71,19 @@ async def revoke_invite(
 
 
 # Invitees.
-@router.post("/invites/accept", response_model=Joined)
-async def accept_link(body: AcceptIn, account: UserRow = Depends(current_account), session: AsyncSession = Depends(get_session)):
-    return Joined(garden_id=await invites.accept_token(session, account, body.token))
+@router.post("/invites/accept", response_model=JoinedGardenResponse)
+async def accept_link(body: AcceptInviteRequest, account: UserRow = Depends(current_account), session: AsyncSession = Depends(get_session)):
+    return JoinedGardenResponse(garden_id=await invites.accept_token(session, account, body.token))
 
 
-@router.get("/me/invites", response_model=list[invites.MyInvite])
+@router.get("/me/invites", response_model=list[invites.MyInviteResponse])
 async def my_invites(account: UserRow = Depends(current_account), session: AsyncSession = Depends(get_session)):
     return await invites.mine(session, account.sub)
 
 
-@router.post("/me/invites/{invite_id}/accept", response_model=Joined)
+@router.post("/me/invites/{invite_id}/accept", response_model=JoinedGardenResponse)
 async def accept_mine(invite_id: int, account: UserRow = Depends(current_account), session: AsyncSession = Depends(get_session)):
-    return Joined(garden_id=await invites.accept_mine(session, account, invite_id))
+    return JoinedGardenResponse(garden_id=await invites.accept_mine(session, account, invite_id))
 
 
 @router.post("/me/invites/{invite_id}/decline", status_code=status.HTTP_204_NO_CONTENT)

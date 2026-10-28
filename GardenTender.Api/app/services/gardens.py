@@ -27,7 +27,7 @@ from app.services.text import normalize_name
 NAME_MAX = 60
 
 
-class GardenOut(BaseModel):
+class GardenResponse(BaseModel):
     id: int
     name: str
     created_at: datetime
@@ -35,7 +35,7 @@ class GardenOut(BaseModel):
     my_role: GardenRole | None = None
 
 
-class MemberOut(BaseModel):
+class MemberResponse(BaseModel):
     handle: str
     display_name: str
     role: GardenRole
@@ -44,8 +44,8 @@ class MemberOut(BaseModel):
     approved_by: str | None = None  # handle, when a contributor's invite was approved: "...; approved by Y"
 
 
-def _out(garden: GardenRow, role: GardenRole | str | None = None) -> GardenOut:
-    return GardenOut(
+def _out(garden: GardenRow, role: GardenRole | str | None = None) -> GardenResponse:
+    return GardenResponse(
         id=garden.id,
         name=garden.name,
         created_at=garden.created_at,
@@ -54,11 +54,11 @@ def _out(garden: GardenRow, role: GardenRole | str | None = None) -> GardenOut:
     )
 
 
-def to_out(access: GardenAccess) -> GardenOut:
+def to_out(access: GardenAccess) -> GardenResponse:
     return _out(access.garden, access.role)
 
 
-async def create(session: AsyncSession, actor: Actor, name: str) -> GardenOut:
+async def create(session: AsyncSession, actor: Actor, name: str) -> GardenResponse:
     """The creator becomes the garden's first admin."""
     garden = GardenRow(name=normalize_name(name, "Garden name", NAME_MAX), created_by=actor.sub)
     session.add(garden)
@@ -69,7 +69,7 @@ async def create(session: AsyncSession, actor: Actor, name: str) -> GardenOut:
     return _out(garden, GardenRole.ADMIN)
 
 
-async def list_mine(session: AsyncSession, sub: str) -> list[GardenOut]:
+async def list_mine(session: AsyncSession, sub: str) -> list[GardenResponse]:
     rows = await session.execute(
         select(GardenRow, GardenMemberRow.role)
         .join(GardenMemberRow, GardenMemberRow.garden_id == GardenRow.id)
@@ -79,14 +79,14 @@ async def list_mine(session: AsyncSession, sub: str) -> list[GardenOut]:
     return [_out(g, role) for g, role in rows]
 
 
-async def list_all(session: AsyncSession, include_deleted: bool) -> list[GardenOut]:
+async def list_all(session: AsyncSession, include_deleted: bool) -> list[GardenResponse]:
     query = select(GardenRow).order_by(GardenRow.id)
     if not include_deleted:
         query = query.where(GardenRow.deleted_at.is_(None))
     return [_out(g) for g in await session.scalars(query)]
 
 
-async def rename(session: AsyncSession, access: GardenAccess, name: str) -> GardenOut:
+async def rename(session: AsyncSession, access: GardenAccess, name: str) -> GardenResponse:
     garden = access.garden
     old, garden.name = garden.name, normalize_name(name, "Garden name", NAME_MAX)
     events.record(session, garden.id, access.actor, "garden.renamed", old=old, new=garden.name)
@@ -102,7 +102,7 @@ async def soft_delete(session: AsyncSession, access: GardenAccess, now: datetime
         await session.commit()
 
 
-async def restore(session: AsyncSession, access: GardenAccess, retention_days: int, now: datetime | None = None) -> GardenOut:
+async def restore(session: AsyncSession, access: GardenAccess, retention_days: int, now: datetime | None = None) -> GardenResponse:
     garden = access.garden
     if garden.deleted_at is None:
         return to_out(access)
@@ -131,7 +131,7 @@ async def purge_deleted(session: AsyncSession, retention_days: int, now: datetim
     return len(ids)
 
 
-async def list_members(session: AsyncSession, garden_id: int) -> list[MemberOut]:
+async def list_members(session: AsyncSession, garden_id: int) -> list[MemberResponse]:
     inviter, approver = aliased(UserRow), aliased(UserRow)
     rows = await session.execute(
         select(GardenMemberRow, UserRow, inviter.handle, approver.handle)
@@ -142,14 +142,14 @@ async def list_members(session: AsyncSession, garden_id: int) -> list[MemberOut]
         .order_by(UserRow.handle)
     )
     return [
-        MemberOut(
+        MemberResponse(
             handle=u.handle, display_name=u.display_name, role=m.role, joined_at=m.joined_at, invited_by=inv, approved_by=appr
         )
         for m, u, inv, appr in rows
     ]
 
 
-async def add_member(session: AsyncSession, access: GardenAccess, handle: str, role: GardenRole) -> MemberOut:
+async def add_member(session: AsyncSession, access: GardenAccess, handle: str, role: GardenRole) -> MemberResponse:
     """Direct add, bypassing invites (global admin only, via GardenPermission.ADD_MEMBER_DIRECTLY)."""
     user = await users.get_by_handle(session, handle)
     if user is None or not users.is_onboarded(user):
@@ -160,10 +160,10 @@ async def add_member(session: AsyncSession, access: GardenAccess, handle: str, r
     session.add(member)
     events.record(session, access.garden.id, access.actor, "member.added", handle=user.handle, role=role)
     await session.commit()
-    return MemberOut(handle=user.handle, display_name=user.display_name, role=role, joined_at=member.joined_at)
+    return MemberResponse(handle=user.handle, display_name=user.display_name, role=role, joined_at=member.joined_at)
 
 
-async def change_role(session: AsyncSession, access: GardenAccess, handle: str, role: GardenRole) -> MemberOut:
+async def change_role(session: AsyncSession, access: GardenAccess, handle: str, role: GardenRole) -> MemberResponse:
     await _lock(session, access.garden.id)
     user, member = await _member(session, access.garden.id, handle)
     if member.role == GardenRole.ADMIN and role != GardenRole.ADMIN:
@@ -172,7 +172,7 @@ async def change_role(session: AsyncSession, access: GardenAccess, handle: str, 
         events.record(session, access.garden.id, access.actor, "member.role_changed", handle=user.handle, old=member.role, new=role)
         member.role = role
     await session.commit()
-    return MemberOut(handle=user.handle, display_name=user.display_name, role=role, joined_at=member.joined_at)
+    return MemberResponse(handle=user.handle, display_name=user.display_name, role=role, joined_at=member.joined_at)
 
 
 async def remove_member(session: AsyncSession, access: GardenAccess, handle: str) -> None:

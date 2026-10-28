@@ -32,7 +32,7 @@ class InviteVia(StrEnum):
     QR = "qr"
 
 
-class InviteTarget(BaseModel):
+class InviteRequest(BaseModel):
     """Who to invite: exactly one of an existing user's handle or an email address."""
 
     handle: str | None = None
@@ -50,7 +50,7 @@ class InviteTarget(BaseModel):
         return self
 
 
-class InviteOut(BaseModel):
+class InviteResponse(BaseModel):
     """What garden admins see. Never reveals an existing user's email, or which user an email belongs to."""
 
     id: int
@@ -63,14 +63,14 @@ class InviteOut(BaseModel):
     expires_at: datetime
 
 
-class CreatedQrInvite(BaseModel):
+class QrInviteResponse(BaseModel):
     id: int
     url: str  # encode this in the QR code
     role: GardenRole
     expires_at: datetime
 
 
-class MyInvite(BaseModel):
+class MyInviteResponse(BaseModel):
     id: int
     garden_id: int
     garden_name: str
@@ -97,11 +97,11 @@ async def create(
     session: AsyncSession,
     garden: GardenRow,
     actor: Actor,
-    target: InviteTarget,
+    target: InviteRequest,
     notifier: Notifier,
     ttl: timedelta,
     requested_by: str | None = None,
-) -> InviteOut:
+) -> InviteResponse:
     """Creates and queues the invite email (sent after the caller commits). Does not commit.
 
     `requested_by` is the contributor whose approved request this is; `actor` is then the approving admin.
@@ -151,7 +151,7 @@ async def create(
     return await _out(session, row)
 
 
-async def create_qr(session: AsyncSession, access: GardenAccess, role: GardenRole, notifier: Notifier, ttl: timedelta) -> CreatedQrInvite:
+async def create_qr(session: AsyncSession, access: GardenAccess, role: GardenRole, notifier: Notifier, ttl: timedelta) -> QrInviteResponse:
     """Short-lived single-use invite shown as a QR code for someone standing next to the admin."""
     token = _new_token()
     row = InviteRow(
@@ -166,10 +166,10 @@ async def create_qr(session: AsyncSession, access: GardenAccess, role: GardenRol
     await session.flush()
     events.record(session, access.garden.id, access.actor, "invite.created", invite_id=row.id, via=InviteVia.QR, role=role)
     await session.commit()
-    return CreatedQrInvite(id=row.id, url=notifier.links.invite(token), role=role, expires_at=row.expires_at)
+    return QrInviteResponse(id=row.id, url=notifier.links.invite(token), role=role, expires_at=row.expires_at)
 
 
-async def list_pending(session: AsyncSession, garden_id: int) -> list[InviteOut]:
+async def list_pending(session: AsyncSession, garden_id: int) -> list[InviteResponse]:
     rows = await session.scalars(_pending_query().where(InviteRow.garden_id == garden_id).order_by(InviteRow.id))
     return [await _out(session, r) for r in rows]
 
@@ -184,7 +184,7 @@ async def revoke(session: AsyncSession, access: GardenAccess, invite_id: int) ->
         await session.commit()
 
 
-async def mine(session: AsyncSession, sub: str) -> list[MyInvite]:
+async def mine(session: AsyncSession, sub: str) -> list[MyInviteResponse]:
     inviter, approver = aliased(UserRow), aliased(UserRow)
     rows = await session.execute(
         _pending_query()
@@ -196,7 +196,7 @@ async def mine(session: AsyncSession, sub: str) -> list[MyInvite]:
         .order_by(InviteRow.id)
     )
     return [
-        MyInvite(
+        MyInviteResponse(
             id=r.id, garden_id=r.garden_id, garden_name=name, role=r.role, invited_by=inv, approved_by=appr, expires_at=r.expires_at
         )
         for r, name, inv, appr in rows
@@ -282,11 +282,11 @@ def _pending_query():
     )
 
 
-async def _out(session: AsyncSession, row: InviteRow) -> InviteOut:
+async def _out(session: AsyncSession, row: InviteRow) -> InviteResponse:
     invitee = await session.get(UserRow, row.invitee_sub) if row.via == InviteVia.HANDLE and row.invitee_sub else None
     inviter = await session.get(UserRow, row.invited_by) if row.invited_by else None
     approver = await session.get(UserRow, row.approved_by) if row.approved_by else None
-    return InviteOut(
+    return InviteResponse(
         id=row.id,
         via=row.via,
         handle=invitee.handle if invitee else None,

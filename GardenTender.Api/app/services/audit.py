@@ -11,7 +11,7 @@ REDACTED = "[redacted]"
 _SECRET_KEY_PARTS = ("token", "secret", "password")
 
 
-class AuditEntry(BaseModel):
+class AuditEntryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -39,8 +39,8 @@ async def record(session: AsyncSession, entry: AdminAuditRow) -> None:
     await session.commit()
 
 
-async def list_entries(session: AsyncSession, limit: int, before_id: int | None) -> list[AuditEntry]:
+async def list_entries(session: AsyncSession, limit: int, before_id: int | None) -> list[AuditEntryResponse]:
     query = select(AdminAuditRow).order_by(AdminAuditRow.id.desc()).limit(limit)
     if before_id is not None:
         query = query.where(AdminAuditRow.id < before_id)
-    return [AuditEntry.model_validate(r) for r in await session.scalars(query)]
+    return [AuditEntryResponse.model_validate(r) for r in await session.scalars(query)]

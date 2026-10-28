@@ -9,12 +9,12 @@ from app.services import audit, gardens
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_global_admin)])
 
 
-@router.get("/gardens", response_model=list[gardens.GardenOut])
+@router.get("/gardens", response_model=list[gardens.GardenResponse])
 async def all_gardens(include_deleted: bool = False, session: AsyncSession = Depends(get_session)):
     return await gardens.list_all(session, include_deleted)
 
 
-@router.get("/audit-log", response_model=list[audit.AuditEntry])
+@router.get("/audit-log", response_model=list[audit.AuditEntryResponse])
 async def audit_log(
     limit: int = Query(50, ge=1, le=200),
     before_id: int | None = Query(None, description="Page backwards from this entry id"),

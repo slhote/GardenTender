@@ -19,14 +19,14 @@ SEARCH_MIN_CHARS = 2
 SEARCH_LIMIT = 20
 
 
-class PublicUser(BaseModel):
+class PublicUserResponse(BaseModel):
     """What other users may see about someone. Never includes email."""
 
     handle: str
     display_name: str
 
 
-class Me(BaseModel):
+class MeResponse(BaseModel):
     handle: str | None
     display_name: str | None
     email: str | None  # the caller's own email only
@@ -37,8 +37,8 @@ def is_onboarded(row: UserRow) -> bool:
     return row.handle is not None and row.display_name is not None
 
 
-def to_me(row: UserRow) -> Me:
-    return Me(
+def to_me(row: UserRow) -> MeResponse:
+    return MeResponse(
         handle=row.handle,
         display_name=row.display_name,
         email=row.email,
@@ -75,7 +75,7 @@ def normalize_display_name(name: str) -> str:
     return normalize_name(name, "Display name", DISPLAY_NAME_MAX)
 
 
-async def set_profile(session: AsyncSession, user: User, handle: str | None, display_name: str | None) -> Me:
+async def set_profile(session: AsyncSession, user: User, handle: str | None, display_name: str | None) -> MeResponse:
     """Sets the display name, and the handle once (handles are immutable after onboarding)."""
     row = await ensure_user(session, user)
     if handle is not None:
@@ -105,7 +105,7 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-async def search(session: AsyncSession, query: str) -> list[PublicUser]:
+async def search(session: AsyncSession, query: str) -> list[PublicUserResponse]:
     """Prefix match on handle or display name; only onboarded users."""
     q = query.strip().lstrip("@")
     if len(q) < SEARCH_MIN_CHARS:
@@ -121,4 +121,4 @@ async def search(session: AsyncSession, query: str) -> list[PublicUser]:
         .order_by(UserRow.handle)
         .limit(SEARCH_LIMIT)
     )
-    return [PublicUser(handle=r.handle, display_name=r.display_name) for r in rows]
+    return [PublicUserResponse(handle=r.handle, display_name=r.display_name) for r in rows]

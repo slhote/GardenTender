@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     # Public origin used in emailed and QR links (App Links). Locally: an ngrok static domain.
     public_base_url: str = "http://localhost:8000"
     email_backend: str = "console"  # only console until a provider is chosen
+    # Mount development-only routes (app/routers/debug.py). Never enable in production.
+    debug_endpoints: bool = False
     # Android App Links verification (/.well-known/assetlinks.json)
     android_package: str = "com.gardentender"
     android_cert_sha256: list[str] = []

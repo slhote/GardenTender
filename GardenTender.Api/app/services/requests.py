@@ -66,12 +66,12 @@ def _model_payload(model: type[BaseModel], normalize: Callable[[BaseModel], Base
 
 
 async def _apply_create_plant(ctx: ApplyContext, payload: dict) -> dict:
-    plant = await plants.create_plant(ctx.session, ctx.garden.id, ctx.actor, plants.NewPlant(**payload), commit=False)
+    plant = await plants.create_plant(ctx.session, ctx.garden.id, ctx.actor, plants.CreatePlantRequest(**payload), commit=False)
     return {"plant_id": plant.id}
 
 
 async def _apply_invite(ctx: ApplyContext, payload: dict) -> dict:
-    target = invites.InviteTarget.model_validate(payload)
+    target = invites.InviteRequest.model_validate(payload)
     invite = await invites.create(
         ctx.session, ctx.garden, ctx.actor, target, ctx.deps.notifier, ctx.deps.invite_ttl, requested_by=ctx.requested_by
     )
@@ -81,19 +81,19 @@ async def _apply_invite(ctx: ApplyContext, payload: dict) -> dict:
 KINDS: dict[str, RequestKind] = {
     "create_plant": RequestKind(
         direct_permission=GardenPermission.PLANTS_CREATE,
-        validate=_model_payload(plants.NewPlant, plants.validate_new),
+        validate=_model_payload(plants.CreatePlantRequest, plants.validate_new),
         apply=_apply_create_plant,
     ),
     # A contributor names who to invite; role defaults to contributor and the admin may change it before approving.
     "invite_user": RequestKind(
         direct_permission=GardenPermission.INVITE,
-        validate=_model_payload(invites.InviteTarget),
+        validate=_model_payload(invites.InviteRequest),
         apply=_apply_invite,
     ),
 }
 
 
-class RequestOut(BaseModel):
+class ApprovalResponse(BaseModel):
     id: int
     type: str
     payload: dict
@@ -132,7 +132,7 @@ async def submit(
     payload: dict,
     note: str | None,
     deps: RequestDeps,
-) -> RequestOut:
+) -> ApprovalResponse:
     kind = _kind(type)
     row = GardenRequestRow(
         garden_id=garden_id,
@@ -152,7 +152,7 @@ async def submit(
     return await get(session, garden_id, row.id)
 
 
-async def list_requests(session: AsyncSession, access: GardenAccess, status: RequestStatus | None) -> list[RequestOut]:
+async def list_requests(session: AsyncSession, access: GardenAccess, status: RequestStatus | None) -> list[ApprovalResponse]:
     """Deciders see every request; everyone else sees only their own."""
     query = _select().where(GardenRequestRow.garden_id == access.garden.id).order_by(GardenRequestRow.id.desc())
     if status is not None:
@@ -162,7 +162,7 @@ async def list_requests(session: AsyncSession, access: GardenAccess, status: Req
     return [_out(*r) for r in await session.execute(query)]
 
 
-async def get_visible(session: AsyncSession, access: GardenAccess, request_id: int) -> RequestOut:
+async def get_visible(session: AsyncSession, access: GardenAccess, request_id: int) -> ApprovalResponse:
     request = await get(session, access.garden.id, request_id)
     row = await session.get(GardenRequestRow, request_id)
     if not _can_decide(access) and row.requested_by != access.user.sub:
@@ -170,14 +170,14 @@ async def get_visible(session: AsyncSession, access: GardenAccess, request_id: i
     return request
 
 
-async def get(session: AsyncSession, garden_id: int, request_id: int) -> RequestOut:
+async def get(session: AsyncSession, garden_id: int, request_id: int) -> ApprovalResponse:
     found = (await session.execute(_select().where(GardenRequestRow.id == request_id, GardenRequestRow.garden_id == garden_id))).first()
     if found is None:
         raise NotFound("Request not found.")
     return _out(*found)
 
 
-async def edit(session: AsyncSession, access: GardenAccess, request_id: int, payload: dict | None, note: str | None) -> RequestOut:
+async def edit(session: AsyncSession, access: GardenAccess, request_id: int, payload: dict | None, note: str | None) -> ApprovalResponse:
     """Deciders may adjust a pending request before deciding (e.g. fix a name, change an invite's role)."""
     row = await _pending(session, access.garden.id, request_id)
     changed = []
@@ -195,7 +195,7 @@ async def edit(session: AsyncSession, access: GardenAccess, request_id: int, pay
 
 async def approve(
     session: AsyncSession, access: GardenAccess, request_id: int, reason: str | None, deps: RequestDeps
-) -> RequestOut:
+) -> ApprovalResponse:
     row = await _pending(session, access.garden.id, request_id)
     await _approve(session, row, _kind(row.type), access.actor, _text(reason, "Reason"), deps)
     await session.commit()
@@ -203,7 +203,7 @@ async def approve(
     return await get(session, access.garden.id, row.id)
 
 
-async def reject(session: AsyncSession, access: GardenAccess, request_id: int, reason: str | None) -> RequestOut:
+async def reject(session: AsyncSession, access: GardenAccess, request_id: int, reason: str | None) -> ApprovalResponse:
     row = await _pending(session, access.garden.id, request_id)
     _decide(row, RequestStatus.REJECTED, access.actor, _text(reason, "Reason"))
     events.record(session, access.garden.id, access.actor, "request.rejected", request_id=row.id, reason=row.decision_reason)
@@ -211,7 +211,7 @@ async def reject(session: AsyncSession, access: GardenAccess, request_id: int, r
     return await get(session, access.garden.id, row.id)
 
 
-async def cancel(session: AsyncSession, access: GardenAccess, request_id: int) -> RequestOut:
+async def cancel(session: AsyncSession, access: GardenAccess, request_id: int) -> ApprovalResponse:
     """Only the requester can withdraw their own pending request."""
     row = await _pending(session, access.garden.id, request_id)
     if row.requested_by != access.user.sub:
@@ -265,8 +265,8 @@ def _select():
     )
 
 
-def _out(row: GardenRequestRow, requester: str | None, decider: str | None) -> RequestOut:
-    return RequestOut(
+def _out(row: GardenRequestRow, requester: str | None, decider: str | None) -> ApprovalResponse:
+    return ApprovalResponse(
         id=row.id,
         type=row.type,
         payload=row.payload,

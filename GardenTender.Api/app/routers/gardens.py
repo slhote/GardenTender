@@ -13,37 +13,37 @@ from app.services import gardens
 router = APIRouter(prefix="/gardens", tags=["gardens"])
 
 
-class GardenIn(BaseModel):
+class GardenNameRequest(BaseModel):
     name: str
 
 
-class NewMemberIn(BaseModel):
+class AddMemberRequest(BaseModel):
     handle: str
     role: GardenRole = GardenRole.CONTRIBUTOR
 
 
-class RoleIn(BaseModel):
+class ChangeRoleRequest(BaseModel):
     role: GardenRole
 
 
-@router.post("", response_model=gardens.GardenOut, status_code=status.HTTP_201_CREATED)
-async def create_garden(body: GardenIn, account: UserRow = Depends(require_onboarded), session: AsyncSession = Depends(get_session)):
+@router.post("", response_model=gardens.GardenResponse, status_code=status.HTTP_201_CREATED)
+async def create_garden(body: GardenNameRequest, account: UserRow = Depends(require_onboarded), session: AsyncSession = Depends(get_session)):
     return await gardens.create(session, Actor(account.sub), body.name)
 
 
-@router.get("", response_model=list[gardens.GardenOut])
+@router.get("", response_model=list[gardens.GardenResponse])
 async def my_gardens(account: UserRow = Depends(require_onboarded), session: AsyncSession = Depends(get_session)):
     return await gardens.list_mine(session, account.sub)
 
 
-@router.get("/{garden_id}", response_model=gardens.GardenOut)
+@router.get("/{garden_id}", response_model=gardens.GardenResponse)
 async def get_garden(access: GardenAccess = Depends(require_garden(GardenPermission.VIEW))):
     return gardens.to_out(access)
 
 
-@router.patch("/{garden_id}", response_model=gardens.GardenOut)
+@router.patch("/{garden_id}", response_model=gardens.GardenResponse)
 async def rename_garden(
-    body: GardenIn,
+    body: GardenNameRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.MANAGE)),
     session: AsyncSession = Depends(get_session),
 ):
@@ -57,7 +57,7 @@ async def delete_garden(
     await gardens.soft_delete(session, access)
 
 
-@router.post("/{garden_id}/restore", response_model=gardens.GardenOut)
+@router.post("/{garden_id}/restore", response_model=gardens.GardenResponse)
 async def restore_garden(
     access: GardenAccess = Depends(require_garden(GardenPermission.MANAGE, allow_deleted=True)),
     session: AsyncSession = Depends(get_session),
@@ -66,26 +66,26 @@ async def restore_garden(
     return await gardens.restore(session, access, settings.garden_retention_days)
 
 
-@router.get("/{garden_id}/members", response_model=list[gardens.MemberOut])
+@router.get("/{garden_id}/members", response_model=list[gardens.MemberResponse])
 async def list_members(
     access: GardenAccess = Depends(require_garden(GardenPermission.VIEW)), session: AsyncSession = Depends(get_session)
 ):
     return await gardens.list_members(session, access.garden.id)
 
 
-@router.post("/{garden_id}/members", response_model=gardens.MemberOut, status_code=status.HTTP_201_CREATED)
+@router.post("/{garden_id}/members", response_model=gardens.MemberResponse, status_code=status.HTTP_201_CREATED)
 async def add_member(
-    body: NewMemberIn,
+    body: AddMemberRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.ADD_MEMBER_DIRECTLY)),
     session: AsyncSession = Depends(get_session),
 ):
     return await gardens.add_member(session, access, body.handle, body.role)
 
 
-@router.patch("/{garden_id}/members/{handle}", response_model=gardens.MemberOut)
+@router.patch("/{garden_id}/members/{handle}", response_model=gardens.MemberResponse)
 async def change_role(
     handle: str,
-    body: RoleIn,
+    body: ChangeRoleRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.MANAGE_MEMBERS)),
     session: AsyncSession = Depends(get_session),
 ):

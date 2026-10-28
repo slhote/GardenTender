@@ -89,7 +89,7 @@ async def _update_plant(session: AsyncSession, ctx: ToolContext, args: UpdatePla
     return (await plants.update_plant(session, ctx.garden_id, ctx.actor, args.plant_id, args.field, args.value)).model_dump()
 
 
-class AddPlantInput(plants.NewPlant):
+class AddPlantInput(plants.CreatePlantRequest):
     note: str | None = None  # why, for the admin reviewing a contributor's request
 
 

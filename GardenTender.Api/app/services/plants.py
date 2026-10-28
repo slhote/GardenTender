@@ -16,7 +16,7 @@ NAME_MAX = 60
 WATER_DAYS_RANGE = (1, 365)
 
 
-class Plant(BaseModel):
+class PlantResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -26,7 +26,7 @@ class Plant(BaseModel):
     water_every_days: int = 7
 
 
-class NewPlant(BaseModel):
+class CreatePlantRequest(BaseModel):
     name: str
     species: str = ""
     notes: str = ""
@@ -47,19 +47,19 @@ def _water_days(value: int | str) -> int:
     return days
 
 
-def validate_new(plant: NewPlant) -> NewPlant:
+def validate_new(plant: CreatePlantRequest) -> CreatePlantRequest:
     """Normalizes and checks a new plant without saving it (also used when an approval request is filed)."""
     return plant.model_copy(
         update={"name": normalize_name(plant.name, "Plant name", NAME_MAX), "water_every_days": _water_days(plant.water_every_days)}
     )
 
 
-async def list_plants(session: AsyncSession, garden_id: int) -> list[Plant]:
+async def list_plants(session: AsyncSession, garden_id: int) -> list[PlantResponse]:
     rows = await session.scalars(select(PlantRow).where(PlantRow.garden_id == garden_id).order_by(PlantRow.id))
-    return [Plant.model_validate(r) for r in rows]
+    return [PlantResponse.model_validate(r) for r in rows]
 
 
-async def create_plant(session: AsyncSession, garden_id: int, actor: Actor, plant: NewPlant, *, commit: bool = True) -> Plant:
+async def create_plant(session: AsyncSession, garden_id: int, actor: Actor, plant: CreatePlantRequest, *, commit: bool = True) -> PlantResponse:
     plant = validate_new(plant)
     row = PlantRow(garden_id=garden_id, created_by=actor.sub, **plant.model_dump())
     session.add(row)
@@ -67,10 +67,10 @@ async def create_plant(session: AsyncSession, garden_id: int, actor: Actor, plan
     events.record(session, garden_id, actor, "plant.created", plant_id=row.id, name=row.name)
     if commit:
         await session.commit()
-    return Plant.model_validate(row)
+    return PlantResponse.model_validate(row)
 
 
-async def update_plant(session: AsyncSession, garden_id: int, actor: Actor, plant_id: int, field: str, value: str) -> Plant:
+async def update_plant(session: AsyncSession, garden_id: int, actor: Actor, plant_id: int, field: str, value: str) -> PlantResponse:
     if field not in EDITABLE_FIELDS:
         raise InvalidInput(f"Field must be one of {EDITABLE_FIELDS}")
     row = await _get(session, garden_id, plant_id)
@@ -84,7 +84,7 @@ async def update_plant(session: AsyncSession, garden_id: int, actor: Actor, plan
     setattr(row, field, new)
     events.record(session, garden_id, actor, "plant.updated", plant_id=plant_id, field=field, old=old, new=new)
     await session.commit()
-    return Plant.model_validate(row)
+    return PlantResponse.model_validate(row)
 
 
 async def delete_plant(session: AsyncSession, garden_id: int, actor: Actor, plant_id: int) -> None:
