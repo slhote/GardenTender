@@ -50,6 +50,7 @@ class GardenMemberRow(Base):
     user_sub: Mapped[str] = mapped_column(ForeignKey("users.sub", ondelete="CASCADE"), primary_key=True, index=True)
     role: Mapped[str] = mapped_column(String)  # app.roles.GardenRole
     invited_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))  # admin who approved a contributor's invite
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -99,4 +100,26 @@ class GardenRequestRow(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decision_reason: Mapped[str | None] = mapped_column(String)
     result: Mapped[dict | None] = mapped_column(JSON)  # what approval produced, e.g. {"plant_id": 3}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class InviteRow(Base):
+    """A single-use invite. Only the token's hash is stored; the token itself lives in the link."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    garden_id: Mapped[int] = mapped_column(ForeignKey("gardens.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String, unique=True)
+    via: Mapped[str] = mapped_column(String)  # app.services.invites.InviteVia
+    role: Mapped[str] = mapped_column(String)
+    invited_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    approved_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))  # set for approved requests
+    invitee_sub: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="CASCADE"), index=True)
+    email: Mapped[str | None] = mapped_column(String)  # the address the inviter typed, if any
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

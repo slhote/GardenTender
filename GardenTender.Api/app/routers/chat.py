@@ -6,12 +6,13 @@ from app.access import GardenAccess
 from app.auth import User, get_current_user
 from app.config import Settings, get_settings
 from app.db import get_sessionmaker
-from app.dependencies import require_garden
+from app.dependencies import get_request_deps, require_garden
 from app.llm.base import LlmProvider
 from app.llm.claude import ClaudeProvider
 from app.llm.loop import DeviceResult, run_chat
 from app.llm.ollama import OllamaProvider
 from app.roles import GardenPermission
+from app.services.requests import RequestDeps
 from app.tools.registry import ToolContext
 
 router = APIRouter(tags=["chat"])
@@ -72,13 +73,14 @@ async def chat(
     provider: LlmProvider = Depends(get_provider),
     maker: async_sessionmaker[AsyncSession] = Depends(get_sessionmaker),
     s: Settings = Depends(get_settings),
+    request_deps: RequestDeps = Depends(get_request_deps),
 ):
     history = list(req.history)
     if req.message:
         history.append({"role": "user", "content": [{"type": "text", "text": req.message}]})
     result = await run_chat(
         maker,
-        ToolContext(access.garden.id, access.actor, access.role),
+        ToolContext(access.garden.id, access.actor, access.role, request_deps),
         history,
         req.decisions,
         provider,

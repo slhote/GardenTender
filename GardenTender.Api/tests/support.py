@@ -68,6 +68,23 @@ def run_db(fn):
     return asyncio.run(run())
 
 
+class CapturingEmailSender:
+    def __init__(self):
+        self.sent = []
+
+    async def send(self, message):
+        self.sent.append(message)
+
+
+def capture_emails():
+    """Routes outgoing email into a list for the rest of the test."""
+    from app.dependencies import get_email_sender
+
+    sender = CapturingEmailSender()
+    app.dependency_overrides[get_email_sender] = lambda: sender
+    return sender.sent
+
+
 def add_member(client, garden_id, handle, role="contributor"):
     """Adds a member directly as the global admin. Callers log in again afterwards."""
     login(GLOBAL_ADMIN, sub="auth0|root")

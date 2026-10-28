@@ -4,10 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.access import GardenAccess
 from app.db import get_session
-from app.dependencies import require_garden
+from app.dependencies import get_request_deps, require_garden
 from app.roles import GardenPermission
 from app.services import requests
-from app.services.requests import RequestOut, RequestStatus
+from app.services.requests import RequestDeps, RequestOut, RequestStatus
 
 router = APIRouter(prefix="/gardens/{garden_id}/requests", tags=["requests"])
 
@@ -32,8 +32,9 @@ async def submit(
     body: RequestIn,
     access: GardenAccess = Depends(require_garden(GardenPermission.FILE_REQUESTS)),
     session: AsyncSession = Depends(get_session),
+    deps: RequestDeps = Depends(get_request_deps),
 ):
-    return await requests.submit(session, access.garden.id, access.actor, access.role, body.type, body.payload, body.note)
+    return await requests.submit(session, access.garden.id, access.actor, access.role, body.type, body.payload, body.note, deps)
 
 
 @router.get("", response_model=list[RequestOut])
@@ -70,8 +71,9 @@ async def approve(
     body: DecisionIn,
     access: GardenAccess = Depends(require_garden(GardenPermission.DECIDE_REQUESTS)),
     session: AsyncSession = Depends(get_session),
+    deps: RequestDeps = Depends(get_request_deps),
 ):
-    return await requests.approve(session, access, request_id, body.reason)
+    return await requests.approve(session, access, request_id, body.reason, deps)
 
 
 @router.post("/{request_id}/reject", response_model=RequestOut)
