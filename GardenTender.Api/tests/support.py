@@ -6,7 +6,7 @@ from app.db import get_sessionmaker
 from app.main import app
 from app.routers.chat import get_provider
 
-ALL = frozenset({"chat:use", "plants:read", "plants:write", "reminders:write", "calendar:write"})
+NO_PERMS = frozenset()  # regular users carry no Auth0 permissions; garden roles live in the database
 
 
 class FakeProvider:
@@ -21,15 +21,15 @@ class FakeProvider:
         return self.turns.pop(0)
 
 
-def use(call_id, name, **input):
-    return {"type": "tool_use", "id": call_id, "name": name, "input": input}
+def use(call_id, tool_name, **input):
+    return {"type": "tool_use", "id": call_id, "name": tool_name, "input": input}
 
 
 def text(t):
     return {"type": "text", "text": t}
 
 
-def login(perms=ALL, sub="auth0|u1", email=None):
+def login(perms=NO_PERMS, sub="auth0|u1", email=None):
     app.dependency_overrides[authenticate] = lambda: User(sub=sub, permissions=perms, email=email)
 
 
@@ -42,7 +42,7 @@ def provider(turns):
 GLOBAL_ADMIN = frozenset({"system:admin"})
 
 
-def onboard(client, sub, handle=None, perms=ALL):
+def onboard(client, sub, handle=None, perms=NO_PERMS):
     """Logs in as `sub` and completes onboarding with `handle` (defaults to the part of the sub after '|')."""
     login(perms, sub=sub)
     handle = handle or sub.split("|")[-1]
@@ -66,3 +66,19 @@ def run_db(fn):
             return await fn(session)
 
     return asyncio.run(run())
+
+
+def add_member(client, garden_id, handle, role="contributor"):
+    """Adds a member directly as the global admin. Callers log in again afterwards."""
+    login(GLOBAL_ADMIN, sub="auth0|root")
+    r = client.post(f"/gardens/{garden_id}/members", json={"handle": handle, "role": role})
+    assert r.status_code == 201, r.text
+
+
+def garden_with_contributor(client):
+    """ann (admin) owns a garden and bob is a contributor. Returns the garden id."""
+    onboard(client, "auth0|ann")
+    gid = create_garden(client, "auth0|ann")
+    onboard(client, "auth0|bob")
+    add_member(client, gid, "bob")
+    return gid

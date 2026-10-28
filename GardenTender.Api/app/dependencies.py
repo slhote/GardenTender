@@ -27,12 +27,17 @@ def require_global_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def require_garden(permission: GardenPermission, *, allow_deleted: bool = False):
-    """Resolves the `garden_id` path parameter to a GardenAccess the caller holds `permission` on."""
+def require_garden(permission: GardenPermission, *, allow_deleted: bool = False, allow_override: bool = True):
+    """Resolves the `garden_id` path parameter to a GardenAccess the caller holds `permission` on.
+
+    `allow_override=False` requires real membership (the global admin override doesn't apply).
+    """
 
     async def resolve(
         garden_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
     ) -> GardenAccess:
-        return await access.resolve(session, garden_id, user, permission, allow_deleted=allow_deleted)
+        return await access.resolve(
+            session, garden_id, user, permission, allow_deleted=allow_deleted, allow_override=allow_override
+        )
 
     return resolve

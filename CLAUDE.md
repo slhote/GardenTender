@@ -31,15 +31,15 @@ Schema changes go through Alembic (`migrations/`): edit `app/models.py`, then `u
 
 ## Architecture
 
-**Chat flow.** The app's chat sheet (`chat/ChatViewModel`, `ChatApi`) calls the API's `/chat` with the Auth0 access token. The API runs a provider-agnostic tool-use loop, `run_chat` in `app/llm/loop.py`; `/chat` depends only on that function. `LlmProvider` (`app/llm/base.py`) has Claude and Ollama implementations selected by `LLM_PROVIDER`.
+**Chat flow.** The app's chat sheet (`chat/ChatViewModel`, `ChatApi`) calls the API's `/gardens/{id}/chat` with the Auth0 access token (chat requires garden membership; the global admin override doesn't apply). The API runs a provider-agnostic tool-use loop, `run_chat` in `app/llm/loop.py`; `/chat` depends only on that function. `LlmProvider` (`app/llm/base.py`) has Claude and Ollama implementations selected by `LLM_PROVIDER`.
 
-**Tools** are plain data in `app/tools/registry.py` (Pydantic input model, handler, required permission, `confirm`, `runs_on`). Two kinds:
+**Tools** are plain data in `app/tools/registry.py` (Pydantic input model, handler, required `GardenPermission`, `confirm`, `runs_on`). Two kinds:
 - `runs_on="server"`: handler runs in the API via `app/services/` (shared with the direct endpoints). `confirm=True` pauses for user approval first.
 - `runs_on="device"` (`set_reminder`, `add_calendar_event`): the API returns them as pending calls and the Android `chat/DeviceTools` executes them, then sends results back.
 
-**Stateless resume.** There is no server-side conversation state. When a call needs the client, `run_chat` stops and returns the history plus pending calls; the client resends the history with `decisions` / `device_results`. History can be forged, so every executed call is re-validated and permission-checked server-side. The model never supplies the user id; handlers receive the token's `sub`, and all data access is scoped by it. Chat history on the phone is in-memory only by design.
+**Stateless resume.** There is no server-side conversation state. When a call needs the client, `run_chat` stops and returns the history plus pending calls; the client resends the history with `decisions` / `device_results`. History can be forged, so every executed call is re-validated and checked against the caller's garden role server-side. The model never supplies the user or garden; handlers receive a `ToolContext` (garden id, actor, role) built from the token and membership, and all data access is scoped by the garden. Chat history on the phone is in-memory only by design.
 
-**Auth.** Auth0 RS256 JWTs verified in `app/auth.py`; permissions (`chat:use`, `reminders:write`, `calendar:write`, `plants:write`) come from the RBAC `permissions` claim. The model only sees tools the user has permission for. The app must request the API audience at login or Auth0 issues an opaque token the API can't verify.
+**Auth.** Auth0 RS256 JWTs verified in `app/auth.py`. The only Auth0 permission the API uses is `system:admin` (global admin, from the RBAC `permissions` claim); everything else is a per-garden role. The model only sees tools the caller's garden role allows. The app must request the API audience at login or Auth0 issues an opaque token the API can't verify.
 
 **Gardens and roles.** Per-garden roles (`admin`, `contributor`) live in `garden_members`, not Auth0; `app/roles.py` maps each role to permissions (admin ⊇ contributor). Garden routes depend on `require_garden(permission)`, which resolves membership or the global admin override (Auth0 permission `system:admin`); non-members get 404. Every garden action writes a `garden_events` row in the same transaction, and `app/audit.py` middleware logs every `system:admin` request to `admin_audit_log`. Deleted gardens are soft-deleted and purged by `python -m app.jobs.purge` after `GARDEN_RETENTION_DAYS`.
 

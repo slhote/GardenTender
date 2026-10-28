@@ -4,7 +4,8 @@ from sqlalchemy import select, update
 
 from app.models import GardenEventRow, GardenMemberRow, GardenRow
 from app.services import gardens
-from tests.support import GLOBAL_ADMIN, create_garden, login, onboard, run_db
+from tests.support import GLOBAL_ADMIN, create_garden, garden_with_contributor, login, onboard, run_db
+from tests.support import add_member as add
 
 
 async def _scalars(session, query):
@@ -24,21 +25,6 @@ def event_types(garden_id):
 def backdate_deletion(garden_id, days):
     when = datetime.now(UTC) - timedelta(days=days)
     run_db(lambda s: _exec(s, update(GardenRow).where(GardenRow.id == garden_id).values(deleted_at=when)))
-
-
-def add(client, garden_id, handle, role="contributor"):
-    """Adds a member directly as the global admin. Callers log in again afterwards."""
-    login(GLOBAL_ADMIN, sub="auth0|root")
-    r = client.post(f"/gardens/{garden_id}/members", json={"handle": handle, "role": role})
-    assert r.status_code == 201, r.text
-
-
-def garden_with_contributor(client):
-    onboard(client, "auth0|ann")
-    gid = create_garden(client, "auth0|ann")
-    onboard(client, "auth0|bob")
-    add(client, gid, "bob")
-    return gid
 
 
 def test_creating_a_garden_requires_onboarding(client):

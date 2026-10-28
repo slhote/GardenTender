@@ -2,13 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.auth import User, require_permission
+from app.access import GardenAccess
+from app.auth import User, get_current_user
 from app.config import Settings, get_settings
 from app.db import get_sessionmaker
+from app.dependencies import require_garden
 from app.llm.base import LlmProvider
 from app.llm.claude import ClaudeProvider
 from app.llm.loop import DeviceResult, run_chat
 from app.llm.ollama import OllamaProvider
+from app.roles import GardenPermission
+from app.tools.registry import ToolContext
 
 router = APIRouter(tags=["chat"])
 
@@ -54,17 +58,17 @@ def get_provider(req: ChatRequest, s: Settings = Depends(get_settings)) -> LlmPr
 
 
 @router.get("/models")
-async def list_models(_: User = Depends(require_permission("chat:use")), s: Settings = Depends(get_settings)):
+async def list_models(_: User = Depends(get_current_user), s: Settings = Depends(get_settings)):
     if s.llm_provider == "ollama":
         models = s.ollama_models if s.llm_model in s.ollama_models else [s.llm_model, *s.ollama_models]
         return {"models": models, "default": s.llm_model}
     return {"models": [s.llm_model], "default": s.llm_model}
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/gardens/{garden_id}/chat", response_model=ChatResponse)
 async def chat(
     req: ChatRequest,
-    user: User = Depends(require_permission("chat:use")),
+    access: GardenAccess = Depends(require_garden(GardenPermission.CHAT, allow_override=False)),
     provider: LlmProvider = Depends(get_provider),
     maker: async_sessionmaker[AsyncSession] = Depends(get_sessionmaker),
     s: Settings = Depends(get_settings),
@@ -74,7 +78,7 @@ async def chat(
         history.append({"role": "user", "content": [{"type": "text", "text": req.message}]})
     result = await run_chat(
         maker,
-        user,
+        ToolContext(access.garden.id, access.actor, access.role),
         history,
         req.decisions,
         provider,

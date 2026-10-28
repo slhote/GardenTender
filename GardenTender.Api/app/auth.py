@@ -57,11 +57,3 @@ def get_current_user(request: Request, user: User = Depends(authenticate)) -> Us
     request.state.user = user
     return user
 
-
-def require_permission(permission: str):
-    def check(user: User = Depends(get_current_user)) -> User:
-        if permission not in user.permissions:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Missing permission: {permission}")
-        return user
-
-    return check

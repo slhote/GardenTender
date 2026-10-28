@@ -1,4 +1,4 @@
-from tests.support import ALL, GLOBAL_ADMIN, create_garden, login, onboard
+from tests.support import GLOBAL_ADMIN, create_garden, login, onboard
 
 
 def audit(client):
@@ -7,7 +7,7 @@ def audit(client):
 
 
 def test_admin_routes_require_global_admin(client):
-    login(ALL, sub="auth0|ann")
+    login(sub="auth0|ann")
     assert client.get("/admin/gardens").status_code == 403
     assert client.get("/admin/audit-log").status_code == 403
 
