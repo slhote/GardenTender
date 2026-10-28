@@ -47,11 +47,11 @@ Schema changes go through Alembic (`migrations/`): edit `app/models.py`, then `u
 
 **Convention (see `GardenTender.Api/PLAN.md`).** Don't hand-build features LangChain/LangGraph will later own (streaming, retries, token counting, memory, cross-provider normalization). Keep the seams (`run_chat`, `LlmProvider`, tool registry, `services/`) free of framework dependencies.
 
-**Android.** Single-module Compose app with Hilt-style DI in `di/AppModule.kt`, Auth0 + biometric login in `auth/`, QR scan/generate in `qr/`, and screens in `ui/Screens.kt`.
+**Android.** Single-module Compose app, packaged by feature (`auth/`, `home/`, `qr/`, `settings/`, `chat/`), one screen per file with its ViewModel beside it. Koin DI in `di/AppModule.kt` (inject collaborators; don't read `BuildConfig` or `getSharedPreferences` directly, use `AppConfig` / `SettingsStore`). Routes and the `NavHost` live in `navigation/`; shared UI in `ui/`. Exceptions become user-facing text only in `error/ErrorMessages.kt`; logic layers throw typed errors (e.g. `ChatApiException`).
 
 ## Engineering standards (whole repo: API and Android)
 
 - Single responsibility: one feature per router/screen/ViewModel file; no god files (e.g. routes don't accumulate in `main.py`, screens don't accumulate in one file).
-- Dependency injection: inject collaborators (FastAPI `Depends`, Hilt-style modules on Android) instead of reaching for globals, so they can be swapped in tests.
+- Dependency injection: inject collaborators (FastAPI `Depends`, Koin modules on Android) instead of reaching for globals, so they can be swapped in tests.
 - SOLID and DRY: depend on interfaces at the seams (`LlmProvider`, services); extract shared code instead of copying it, including in tests.
 - Error handling: raise or return typed domain errors from the logic layer and map them to transport/UI errors in one place; never swallow exceptions silently.

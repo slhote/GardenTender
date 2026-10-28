@@ -5,11 +5,13 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.withStarted
 import androidx.lifecycle.viewModelScope
+import com.gardentender.error.ErrorMessages
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 
@@ -21,10 +23,12 @@ val CHAT_MODELS = listOf("gemma4", "qwen3.5:4b", "qwen2.5:3b")
 /**
  * Holds the conversation. Scoped to the activity so it survives closing the sheet,
  * navigating between screens, and configuration changes. It is memory-only on purpose: closing the app clears it.
+ * [processLifecycle] is the whole app's lifecycle (`ProcessLifecycleOwner`), used to detect backgrounding.
  */
 class ChatViewModel(
     private val api: ChatApi,
     private val device: DeviceTools,
+    private val processLifecycle: Lifecycle,
 ) : ViewModel() {
     val messages = mutableStateListOf<ChatMessage>()
     var open by mutableStateOf(false)
@@ -54,7 +58,7 @@ class ChatViewModel(
     }
 
     init {
-        ProcessLifecycleOwner.get().lifecycle.addObserver(processObserver)
+        processLifecycle.addObserver(processObserver)
     }
 
     fun selectModel(name: String) { if (name in CHAT_MODELS) model = name }
@@ -133,8 +137,8 @@ class ChatViewModel(
             } catch (e: ChatApiException) {
                 // Android can cut the connection while the app is in the background. If that's what happened,
                 // wait for the user to come back and try once more (device results are cached, so nothing re-runs).
-                if (!e.isNetwork || !backgrounded) throw e
-                ProcessLifecycleOwner.get().lifecycle.withStarted { }
+                if (e !is ChatApiException.Network || !backgrounded) throw e
+                processLifecycle.withStarted { }
                 backgrounded = false
                 api.chat(history, message, decisions, deviceResults, model)
             }
@@ -144,11 +148,11 @@ class ChatViewModel(
             deviceDone.clear()
             if (reply.reply.isNotBlank()) messages.add(ChatMessage(reply.reply, fromUser = false))
             chainResume = held.isNotEmpty() && pending.isEmpty()
-        } catch (e: kotlinx.coroutines.CancellationException) {
+        } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             // Anything unexpected (bad JSON, etc.) should show up in the chat, not crash the app.
-            messages.add(ChatMessage((e as? ChatApiException)?.message ?: "Something went wrong talking to the chat server.", fromUser = false))
+            messages.add(ChatMessage(ErrorMessages.userMessage(e, CHAT_FAILED), fromUser = false))
             if (held.none { it.confirm } && held.isNotEmpty()) {
                 // Nothing for the user to retry from: drop the dangling tool request so the chat can continue.
                 history = JSONArray((0 until history.length() - 1).map { history.get(it) })
@@ -162,7 +166,11 @@ class ChatViewModel(
         if (chainResume) resume(approved = true)
     }
 
+    private companion object {
+        const val CHAT_FAILED = "Something went wrong talking to the chat server."
+    }
+
     override fun onCleared() {
-        ProcessLifecycleOwner.get().lifecycle.removeObserver(processObserver)
+        processLifecycle.removeObserver(processObserver)
     }
 }

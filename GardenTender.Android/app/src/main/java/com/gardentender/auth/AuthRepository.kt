@@ -5,7 +5,10 @@ import com.auth0.android.Auth0
 import com.auth0.android.authentication.AuthenticationAPIClient
 import com.auth0.android.authentication.storage.SecureCredentialsManager
 import com.auth0.android.provider.WebAuthProvider
-import com.gardentender.BuildConfig
+import com.gardentender.config.AppConfig
+import com.gardentender.error.ErrorMessages
+import com.gardentender.settings.SettingsStore
+import kotlinx.coroutines.CancellationException
 
 data class UserProfile(val name: String?, val email: String?)
 
@@ -13,15 +16,14 @@ class AuthRepository(
     private val account: Auth0,
     private val apiClient: AuthenticationAPIClient,
     private val credMgr: SecureCredentialsManager,
-    context: Context,
+    private val settings: SettingsStore,
+    private val config: AppConfig,
 ) {
-    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-
     var biometricEnabled: Boolean
-        get() = prefs.getBoolean(KEY_BIOMETRIC, false)
-        set(value) = prefs.edit().putBoolean(KEY_BIOMETRIC, value).apply()
+        get() = settings.biometricEnabled
+        set(value) { settings.biometricEnabled = value }
 
-    val isConfigured: Boolean get() = BuildConfig.AUTH0_CLIENT_ID.isNotBlank()
+    val isConfigured: Boolean get() = config.auth0ClientId.isNotBlank()
 
     fun hasValidCredentials(): Boolean = credMgr.hasValidCredentials()
 
@@ -30,7 +32,7 @@ class AuthRepository(
         val result = WebAuthProvider.login(account)
             .withScheme(SCHEME)
             .withScope("openid profile email offline_access")
-            .withAudience(BuildConfig.AUTH0_AUDIENCE)
+            .withAudience(config.auth0Audience)
             .withParameters(mapOf("prompt" to "login"))
             .await(activityContext)
         credMgr.saveCredentials(result)
@@ -56,14 +58,17 @@ class AuthRepository(
      */
     suspend fun logout() {
         if (biometricEnabled) return
-        runCatching {
+        try {
             credMgr.awaitCredentials().refreshToken?.let { apiClient.revokeToken(it).await() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ErrorMessages.logIgnored("Refresh token revocation", e)
         }
         credMgr.clearCredentials()
     }
 
     private companion object {
         const val SCHEME = "gardentender-auth"
-        const val KEY_BIOMETRIC = "biometric_login"
     }
 }

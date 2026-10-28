@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gardentender.error.ErrorMessages
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 sealed interface AuthState {
@@ -37,7 +39,16 @@ class AuthViewModel(
             state = AuthState.LoggedOut
         } else if (repo.isConfigured && repo.hasValidCredentials()) {
             viewModelScope.launch {
-                state = AuthState.LoggedIn(runCatching { repo.currentUser() }.getOrNull())
+                // A failed profile fetch still leaves the user logged in; the home screen just omits the name.
+                val user = try {
+                    repo.currentUser()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ErrorMessages.logIgnored("Profile fetch", e)
+                    null
+                }
+                state = AuthState.LoggedIn(user)
             }
         } else {
             state = AuthState.LoggedOut
@@ -52,8 +63,10 @@ class AuthViewModel(
         viewModelScope.launch {
             try {
                 state = AuthState.LoggedIn(repo.login(activityContext))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                error = e.message ?: "Login failed"
+                error = ErrorMessages.userMessage(e, "Login failed")
                 state = AuthState.LoggedOut
             }
         }
@@ -68,8 +81,10 @@ class AuthViewModel(
                     state = AuthState.Loading
                     state = try {
                         AuthState.LoggedIn(repo.currentUser())
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
-                        error = e.message ?: "Login failed"
+                        error = ErrorMessages.userMessage(e, "Login failed")
                         AuthState.LoggedOut
                     }
                 }
@@ -103,8 +118,10 @@ class AuthViewModel(
             try {
                 repo.logout()
                 state = AuthState.LoggedOut
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                error = e.message ?: "Logout failed"
+                error = ErrorMessages.userMessage(e, "Logout failed")
             }
         }
     }
