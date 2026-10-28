@@ -13,48 +13,48 @@ async def _event_types(session, gid):
     return list(await session.scalars(query))
 
 
-def test_admin_creates_edits_deletes(client):
-    gid = garden_with_contributor(client)
+async def test_admin_creates_edits_deletes(client):
+    gid = await garden_with_contributor(client)
     login(sub="auth0|ann")
-    created = client.post(plants_url(gid), json={"name": " Fern ", "species": "Nephrolepis"}).json()
+    created = (await client.post(plants_url(gid), json={"name": " Fern ", "species": "Nephrolepis"})).json()
     assert created["name"] == "Fern"
     pid = created["id"]
-    assert client.patch(plants_url(gid, pid), json={"field": "water_every_days", "value": "4"}).json()["water_every_days"] == 4
-    assert client.delete(plants_url(gid, pid)).status_code == 204
-    assert client.get(plants_url(gid)).json() == []
-    assert run_db(lambda s: _event_types(s, gid))[-3:] == ["plant.created", "plant.updated", "plant.deleted"]
+    assert (await client.patch(plants_url(gid, pid), json={"field": "water_every_days", "value": "4"})).json()["water_every_days"] == 4
+    assert (await client.delete(plants_url(gid, pid))).status_code == 204
+    assert (await client.get(plants_url(gid))).json() == []
+    assert (await run_db(lambda s: _event_types(s, gid)))[-3:] == ["plant.created", "plant.updated", "plant.deleted"]
 
 
-def test_contributor_edits_but_cannot_create_or_delete(client):
-    gid = garden_with_contributor(client)
+async def test_contributor_edits_but_cannot_create_or_delete(client):
+    gid = await garden_with_contributor(client)
     login(sub="auth0|ann")
-    pid = client.post(plants_url(gid), json={"name": "Fern"}).json()["id"]
+    pid = (await client.post(plants_url(gid), json={"name": "Fern"})).json()["id"]
     login(sub="auth0|bob")
-    assert client.patch(plants_url(gid, pid), json={"field": "notes", "value": "north window"}).status_code == 200
-    assert client.post(plants_url(gid), json={"name": "Basil"}).status_code == 403
-    assert client.delete(plants_url(gid, pid)).status_code == 403
+    assert (await client.patch(plants_url(gid, pid), json={"field": "notes", "value": "north window"})).status_code == 200
+    assert (await client.post(plants_url(gid), json={"name": "Basil"})).status_code == 403
+    assert (await client.delete(plants_url(gid, pid))).status_code == 403
 
 
-def test_plants_are_scoped_to_their_garden(client):
-    gid = garden_with_contributor(client)
+async def test_plants_are_scoped_to_their_garden(client):
+    gid = await garden_with_contributor(client)
     login(sub="auth0|ann")
-    pid = client.post(plants_url(gid), json={"name": "Fern"}).json()["id"]
-    other = client.post("/gardens", json={"name": "Other"}).json()["id"]
-    assert client.patch(plants_url(other, pid), json={"field": "name", "value": "x"}).status_code == 404
-    assert client.delete(plants_url(other, pid)).status_code == 404
+    pid = (await client.post(plants_url(gid), json={"name": "Fern"})).json()["id"]
+    other = (await client.post("/gardens", json={"name": "Other"})).json()["id"]
+    assert (await client.patch(plants_url(other, pid), json={"field": "name", "value": "x"})).status_code == 404
+    assert (await client.delete(plants_url(other, pid))).status_code == 404
 
 
-def test_validation_errors(client):
-    gid = garden_with_contributor(client)
+async def test_validation_errors(client):
+    gid = await garden_with_contributor(client)
     login(sub="auth0|ann")
-    assert client.post(plants_url(gid), json={"name": "Fern", "water_every_days": 0}).status_code == 400
-    assert client.post(plants_url(gid), json={"name": "  "}).status_code == 400
-    pid = client.post(plants_url(gid), json={"name": "Fern"}).json()["id"]
-    assert client.patch(plants_url(gid, pid), json={"field": "id", "value": "9"}).status_code == 400
-    assert client.patch(plants_url(gid, 999), json={"field": "name", "value": "x"}).status_code == 404
+    assert (await client.post(plants_url(gid), json={"name": "Fern", "water_every_days": 0})).status_code == 400
+    assert (await client.post(plants_url(gid), json={"name": "  "})).status_code == 400
+    pid = (await client.post(plants_url(gid), json={"name": "Fern"})).json()["id"]
+    assert (await client.patch(plants_url(gid, pid), json={"field": "id", "value": "9"})).status_code == 400
+    assert (await client.patch(plants_url(gid, 999), json={"field": "name", "value": "x"})).status_code == 404
 
 
-def test_global_admin_manages_plants_anywhere(client):
-    gid = garden_with_contributor(client)
+async def test_global_admin_manages_plants_anywhere(client):
+    gid = await garden_with_contributor(client)
     login(GLOBAL_ADMIN, sub="auth0|root")
-    assert client.post(plants_url(gid), json={"name": "Fern"}).status_code == 201
+    assert (await client.post(plants_url(gid), json={"name": "Fern"})).status_code == 201
