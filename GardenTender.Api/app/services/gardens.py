@@ -106,7 +106,7 @@ async def restore(session: AsyncSession, access: GardenAccess, retention_days: i
     garden = access.garden
     if garden.deleted_at is None:
         return to_out(access)
-    if _as_utc(garden.deleted_at) < (now or datetime.now(UTC)) - timedelta(days=retention_days):
+    if garden.deleted_at < (now or datetime.now(UTC)) - timedelta(days=retention_days):
         raise NotFound("Garden not found.")  # past retention: waiting to be purged
     garden.deleted_at = None
     events.record(session, garden.id, access.actor, "garden.restored")
@@ -209,8 +209,4 @@ async def _ensure_not_last_admin(session: AsyncSession, garden_id: int) -> None:
     if admins <= 1:
         raise Conflict("A garden must keep at least one admin. Promote someone else first.")
 
-
-def _as_utc(value: datetime) -> datetime:
-    # SQLite returns naive datetimes; Postgres returns aware ones.
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
 

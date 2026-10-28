@@ -92,10 +92,6 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _as_utc(value: datetime) -> datetime:
-    # SQLite returns naive datetimes; Postgres returns aware ones.
-    return value if value.tzinfo else value.replace(tzinfo=UTC)
-
 
 async def create(
     session: AsyncSession,
@@ -272,7 +268,7 @@ def _check_usable(row: InviteRow | None) -> None:
         or row.accepted_at is not None
         or row.revoked_at is not None
         or row.declined_at is not None
-        or _as_utc(row.expires_at) <= _now()
+        or row.expires_at <= _now()
     ):
         raise NotFound("This invite is no longer valid.")
 

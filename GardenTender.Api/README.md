@@ -18,23 +18,18 @@ docker compose up -d db
 uv sync                                  # install deps
 uv run alembic upgrade head              # create/upgrade the schema
 uv run uvicorn app.main:app --reload --host 0.0.0.0
-uv run pytest                            # tests (no network or API key needed)
+uv run pytest                            # tests (need the db container; no network or API key)
 ```
 You can test the api is up and running by navigating to `http://localhost:8000/docs` in any browser connected to the same network.  
-Tests use a throwaway SQLite file, so they need no Docker, Postgres or API key. The schema is managed by Alembic: change `app/models.py`, then `uv run alembic revision --autogenerate -m "..."` and review the generated file. Docker runs `alembic upgrade head` before starting the API. `tests/test_migrations.py` fails if migrations and models drift.
+The schema is managed by Alembic: change `app/models.py`, then `uv run alembic revision --autogenerate -m "..."` and review the generated file. Docker runs `alembic upgrade head` before starting the API. `tests/test_migrations.py` fails if migrations and models drift.
 
 If your local database predates Alembic, wipe it once: `docker compose down -v`.
 
-### Running the tests against Postgres
+### Tests
 
-The tests are async (pytest-asyncio) and drive the app in-process with `httpx.AsyncClient`. They use SQLite (with foreign keys enforced) by default; to run the same suite on Postgres, point `TEST_DATABASE_URL` at a scratch database. It is wiped before every test, so never use your dev database:
+Tests run against Postgres, the same database as production, so start the container first (`docker compose up -d db`). They use their own database, `<your dev database>_test` on the server in `DATABASE_URL`, which is created automatically; its tables are emptied before every test, and your dev database is never touched. To use a different server or database, set `TEST_DATABASE_URL` (the database name must end in `_test`).
 
-```bash
-docker compose exec db createdb -U <POSTGRES_USER> gt_test
-```
-```bash
-TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@127.0.0.1:5432/gt_test uv run pytest
-```
+The tests are async (pytest-asyncio) and drive the app in-process with `httpx.AsyncClient`. No network access, Auth0 or LLM API key is needed: login, the model and email are replaced with fakes.
 
 ## Public links in local dev (invites, QR codes)
 
