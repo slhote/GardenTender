@@ -11,7 +11,7 @@ from app.services import users
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/search", response_model=list[users.PublicUser])
+@router.get("/search", response_model=list[users.PublicUserResponse])
 async def search_users(
     q: str = Query(..., description="Prefix of a handle or display name"),
     user: User = Depends(get_current_user),

@@ -18,7 +18,7 @@ from app.tools.registry import ToolContext
 router = APIRouter(tags=["chat"])
 
 
-class DeviceResultIn(BaseModel):
+class DeviceResultRequest(BaseModel):
     content: str
     is_error: bool = False
 
@@ -28,12 +28,12 @@ class ChatRequest(BaseModel):
     history: list[dict] = []
     message: str | None = None
     decisions: dict[str, bool] = {}
-    device_results: dict[str, DeviceResultIn] = {}
+    device_results: dict[str, DeviceResultRequest] = {}
     timezone: str | None = None  # IANA name, e.g. America/Chicago
     model: str | None = None  # one of GET /models; only honored for the ollama provider
 
 
-class PendingOut(BaseModel):
+class PendingCallResponse(BaseModel):
     id: str
     name: str
     input: dict
@@ -44,7 +44,7 @@ class PendingOut(BaseModel):
 class ChatResponse(BaseModel):
     history: list[dict]
     reply: str
-    pending: list[PendingOut]
+    pending: list[PendingCallResponse]
 
 
 def get_provider(req: ChatRequest, s: Settings = Depends(get_settings)) -> LlmProvider:
@@ -91,5 +91,5 @@ async def chat(
     return ChatResponse(
         history=result.history,
         reply=result.reply,
-        pending=[PendingOut(id=p.id, name=p.name, input=p.input, runs_on=p.runs_on, confirm=p.confirm) for p in result.pending],
+        pending=[PendingCallResponse(id=p.id, name=p.name, input=p.input, runs_on=p.runs_on, confirm=p.confirm) for p in result.pending],
     )

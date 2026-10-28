@@ -12,31 +12,31 @@ from app.services import plants
 router = APIRouter(prefix="/gardens/{garden_id}/plants", tags=["plants"])
 
 
-class PlantPatch(BaseModel):
+class UpdatePlantRequest(BaseModel):
     field: str
     value: str
 
 
-@router.get("", response_model=list[plants.Plant])
+@router.get("", response_model=list[plants.PlantResponse])
 async def list_plants(
     access: GardenAccess = Depends(require_garden(GardenPermission.VIEW)), session: AsyncSession = Depends(get_session)
 ):
     return await plants.list_plants(session, access.garden.id)
 
 
-@router.post("", response_model=plants.Plant, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=plants.PlantResponse, status_code=status.HTTP_201_CREATED)
 async def create_plant(
-    body: plants.NewPlant,
+    body: plants.CreatePlantRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.PLANTS_CREATE)),
     session: AsyncSession = Depends(get_session),
 ):
     return await plants.create_plant(session, access.garden.id, access.actor, body)
 
 
-@router.patch("/{plant_id}", response_model=plants.Plant)
+@router.patch("/{plant_id}", response_model=plants.PlantResponse)
 async def patch_plant(
     plant_id: int,
-    patch: PlantPatch,
+    patch: UpdatePlantRequest,
     access: GardenAccess = Depends(require_garden(GardenPermission.PLANTS_EDIT)),
     session: AsyncSession = Depends(get_session),
 ):

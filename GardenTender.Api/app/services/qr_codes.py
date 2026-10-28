@@ -30,7 +30,7 @@ class QrTarget(StrEnum):
     PLANT = "plant"
 
 
-class QrIn(BaseModel):
+class QrCodeRequest(BaseModel):
     target_type: QrTarget
     plant_id: int | None = None
     label: str | None = None
@@ -42,12 +42,12 @@ class QrIn(BaseModel):
         return self
 
 
-class QrPatch(BaseModel):
+class UpdateQrCodeRequest(BaseModel):
     label: str | None = None
-    target: QrIn | None = None  # retarget the printed code
+    target: QrCodeRequest | None = None  # retarget the printed code
 
 
-class QrOut(BaseModel):
+class QrCodeResponse(BaseModel):
     id: int
     url: str  # encode this in the QR code
     target_type: QrTarget
@@ -56,7 +56,7 @@ class QrOut(BaseModel):
     created_at: datetime
 
 
-class Resolved(BaseModel):
+class QrResolveResponse(BaseModel):
     target_type: QrTarget
     garden_id: int
     plant_id: int | None
@@ -70,15 +70,15 @@ def _label(value: str | None) -> str | None:
     return normalize_name(value, "Label", LABEL_MAX) if value and value.strip() else None
 
 
-async def _check_target(session: AsyncSession, garden_id: int, target: QrIn) -> None:
+async def _check_target(session: AsyncSession, garden_id: int, target: QrCodeRequest) -> None:
     if target.plant_id is not None:
         plant = await session.scalar(select(PlantRow).where(PlantRow.id == target.plant_id, PlantRow.garden_id == garden_id))
         if plant is None:
             raise InvalidInput(f"No plant with id {target.plant_id} in this garden.")
 
 
-def _out(row: QrCodeRow, links: Links) -> QrOut:
-    return QrOut(
+def _out(row: QrCodeRow, links: Links) -> QrCodeResponse:
+    return QrCodeResponse(
         id=row.id,
         url=links.qr(row.token),
         target_type=row.target_type,
@@ -88,7 +88,7 @@ def _out(row: QrCodeRow, links: Links) -> QrOut:
     )
 
 
-async def create(session: AsyncSession, access: GardenAccess, body: QrIn, links: Links) -> QrOut:
+async def create(session: AsyncSession, access: GardenAccess, body: QrCodeRequest, links: Links) -> QrCodeResponse:
     await _check_target(session, access.garden.id, body)
     row = QrCodeRow(
         token=_token(),
@@ -105,12 +105,12 @@ async def create(session: AsyncSession, access: GardenAccess, body: QrIn, links:
     return _out(row, links)
 
 
-async def list_codes(session: AsyncSession, garden_id: int, links: Links) -> list[QrOut]:
+async def list_codes(session: AsyncSession, garden_id: int, links: Links) -> list[QrCodeResponse]:
     rows = await session.scalars(select(QrCodeRow).where(QrCodeRow.garden_id == garden_id).order_by(QrCodeRow.id))
     return [_out(r, links) for r in rows]
 
 
-async def update(session: AsyncSession, access: GardenAccess, qr_id: int, patch: QrPatch, links: Links) -> QrOut:
+async def update(session: AsyncSession, access: GardenAccess, qr_id: int, patch: UpdateQrCodeRequest, links: Links) -> QrCodeResponse:
     row = await _get(session, access.garden.id, qr_id)
     changes = {}
     if patch.label is not None:
@@ -132,7 +132,7 @@ async def delete(session: AsyncSession, access: GardenAccess, qr_id: int) -> Non
     await session.commit()
 
 
-async def resolve(session: AsyncSession, user: User, token: str) -> Resolved:
+async def resolve(session: AsyncSession, user: User, token: str) -> QrResolveResponse:
     """What a scanned code points at. Non-members get the same answer as for a missing code."""
     row = await session.scalar(select(QrCodeRow).where(QrCodeRow.token == token))
     garden = await session.get(GardenRow, row.garden_id) if row else None
@@ -142,7 +142,7 @@ async def resolve(session: AsyncSession, user: User, token: str) -> Resolved:
         member = await session.get(GardenMemberRow, (garden.id, user.sub))
         if member is None or not role_allows(member.role, GardenPermission.VIEW):
             raise NotFound(NO_ACCESS)
-    return Resolved(target_type=row.target_type, garden_id=garden.id, plant_id=row.plant_id)
+    return QrResolveResponse(target_type=row.target_type, garden_id=garden.id, plant_id=row.plant_id)
 
 
 async def _get(session: AsyncSession, garden_id: int, qr_id: int) -> QrCodeRow:
