@@ -81,3 +81,22 @@ class AdminAuditRow(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     garden_id: Mapped[int | None] = mapped_column(Integer, index=True)  # no FK: the log outlives purged gardens
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
+class GardenRequestRow(Base):
+    """Something a member asked for that an admin must approve. The real row is only created on approval."""
+
+    __tablename__ = "garden_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    garden_id: Mapped[int] = mapped_column(ForeignKey("gardens.id", ondelete="CASCADE"), index=True)
+    type: Mapped[str] = mapped_column(String)  # app.services.requests.KINDS key
+    payload: Mapped[dict] = mapped_column(JSON)
+    note: Mapped[str | None] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, index=True)  # app.services.requests.RequestStatus
+    requested_by: Mapped[str] = mapped_column(ForeignKey("users.sub", ondelete="CASCADE"))
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey("users.sub", ondelete="SET NULL"))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(String)
+    result: Mapped[dict | None] = mapped_column(JSON)  # what approval produced, e.g. {"plant_id": 3}
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

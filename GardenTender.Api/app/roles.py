@@ -22,14 +22,19 @@ class GardenPermission(StrEnum):
     PLANTS_EDIT = "plants:edit"
     PLANTS_CREATE = "plants:create"  # contributors go through an approval request instead
     PLANTS_DELETE = "plants:delete"
+    FILE_REQUESTS = "requests:file"  # ask for something the role can't do directly; admins are auto-approved
+    DECIDE_REQUESTS = "requests:decide"  # see all requests, edit, approve, reject
 
 
-_CONTRIBUTOR = frozenset({GardenPermission.VIEW, GardenPermission.CHAT, GardenPermission.PLANTS_EDIT})
+_CONTRIBUTOR = frozenset(
+    {GardenPermission.VIEW, GardenPermission.CHAT, GardenPermission.PLANTS_EDIT, GardenPermission.FILE_REQUESTS}
+)
 _ADMIN = _CONTRIBUTOR | {
     GardenPermission.MANAGE,
     GardenPermission.MANAGE_MEMBERS,
     GardenPermission.PLANTS_CREATE,
     GardenPermission.PLANTS_DELETE,
+    GardenPermission.DECIDE_REQUESTS,
 }
 
 ROLE_PERMISSIONS: dict[GardenRole, frozenset[GardenPermission]] = {
