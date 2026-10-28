@@ -19,5 +19,7 @@ app = FastAPI(title="GardenTender API", lifespan=lifespan)
 register_exception_handlers(app)
 # Resolved per request so it honors dependency_overrides (tests point it at their own database).
 app.add_middleware(AuditMiddleware, get_sessionmaker=lambda: app.dependency_overrides.get(get_sessionmaker, get_sessionmaker)())
+# Explicit on purpose: this is the allowlist of what the API serves, in match order. tests/test_routers.py fails
+# if a module in app/routers is missing here.
 for module in (chat, plants, me, users, gardens, requests, invites, qr_codes, links, admin):
     app.include_router(module.router)
